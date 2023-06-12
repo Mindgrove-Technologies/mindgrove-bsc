@@ -345,7 +345,7 @@ module vbFIFOLevel#( Integer depthIn )
    provisos ( Bits#(a,sa) ) ;
 
    FIFOF_#(a)  _fifc <- mkSizedFIFOF_( depthIn, True ) ;
-   Reg#(UInt#(cntSize)) countReg <- mkReg( 0 ) ;
+   Reg#(UInt#(cntSize)) countReg <- mkRegA( 0 ) ;
 
    PulseWire r_enq <- mkPulseWire ;
    PulseWire r_deq <- mkPulseWire ;
