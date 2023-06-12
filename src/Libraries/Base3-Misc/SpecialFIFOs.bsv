@@ -75,7 +75,7 @@ module mkPipelineFIFOF (FIFOF#(a))
 
    // STATE ----------------
 
-   Reg#(Maybe#(a)) rv[3] <- mkCReg(3, tagged Invalid);
+   Reg#(Maybe#(a)) rv[3] <- mkCRegA(3, tagged Invalid);
 
    // INTERFACE ----------------
 
@@ -130,7 +130,7 @@ module mkBypassFIFOF (FIFOF#(a))
 
    // STATE ----------------
 
-   Reg#(Maybe#(a)) rv[3] <- mkCReg(3, tagged Invalid);
+   Reg#(Maybe#(a)) rv[3] <- mkCRegA(3, tagged Invalid);
 
    // INTERFACE ----------------
 
@@ -181,7 +181,7 @@ module mkSizedDFIFOF#(Integer n, a dflt) (FIFOF#(a))
 
    Reg#(a) q[n];
    for (Integer i=0; i<n; i=i+1)
-      q[i] <- mkReg(dflt);
+      q[i] <- mkRegA(dflt);
    SCounter cntr <- mkSCounter(n);
 
    PulseWire enqueueing <- mkPulseWire;
@@ -248,22 +248,22 @@ endmodule
 // A counter which can count up to m inclusive (m known at compile time):
 module mkSCounter#(Integer m)(SCounter);
    let _i = ?;
-   if      (m<2)      begin Reg#(UInt#(1))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<4)      begin Reg#(UInt#(2))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<8)      begin Reg#(UInt#(3))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<16)     begin Reg#(UInt#(4))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<32)     begin Reg#(UInt#(5))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<64)     begin Reg#(UInt#(6))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<128)    begin Reg#(UInt#(7))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<256)    begin Reg#(UInt#(8))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<512)    begin Reg#(UInt#(9))  r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<1024)   begin Reg#(UInt#(10)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<2048)   begin Reg#(UInt#(11)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<4096)   begin Reg#(UInt#(12)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<8192)   begin Reg#(UInt#(13)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<16384)  begin Reg#(UInt#(14)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<32768)  begin Reg#(UInt#(15)) r <- mkReg(0); _i <- mkSCtr(r); end
-   else if (m<65536)  begin Reg#(UInt#(16)) r <- mkReg(0); _i <- mkSCtr(r); end
+   if      (m<2)      begin Reg#(UInt#(1))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<4)      begin Reg#(UInt#(2))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<8)      begin Reg#(UInt#(3))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<16)     begin Reg#(UInt#(4))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<32)     begin Reg#(UInt#(5))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<64)     begin Reg#(UInt#(6))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<128)    begin Reg#(UInt#(7))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<256)    begin Reg#(UInt#(8))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<512)    begin Reg#(UInt#(9))  r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<1024)   begin Reg#(UInt#(10)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<2048)   begin Reg#(UInt#(11)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<4096)   begin Reg#(UInt#(12)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<8192)   begin Reg#(UInt#(13)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<16384)  begin Reg#(UInt#(14)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<32768)  begin Reg#(UInt#(15)) r <- mkRegA(0); _i <- mkSCtr(r); end
+   else if (m<65536)  begin Reg#(UInt#(16)) r <- mkRegA(0); _i <- mkSCtr(r); end
    return _i;
 endmodule
 
@@ -335,7 +335,7 @@ module mkBypassFIFOLevel(FIFOLevelIfc#(a, fifoDepth))
 
    FIFOF#(a) fifof <- mkSizedBypassFIFOF(ififoDepth);
 
-   Reg#(UInt#(cntSize)) count       <- mkReg(0);
+   Reg#(UInt#(cntSize)) count       <- mkRegA(0);
    Reg#(Bool)           levelsValidEnq <- mkRevertingVirtualReg(True);
    Reg#(Bool)           levelsValidDeq <- mkRevertingVirtualReg(True);
    Reg#(Bool)           levelsValidClr <- mkRevertingVirtualReg(True);
