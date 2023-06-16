@@ -50,7 +50,7 @@ mkPolyLFSR taps = mkFeedLFSR (pack (map (\ n -> List.elem n taps) genList))
 mkFeedLFSR :: (IsModule m c) => Bit n -> m (LFSR (Bit n))
 mkFeedLFSR feed = liftModule $
     module
-      r :: Reg (Bit n) <- mkReg 1
+      r :: Reg (Bit n) <- mkRegA 1
       interface
         seed x = r := x
         value = r
@@ -90,7 +90,7 @@ mkLFSR_32 = mkFeedLFSR 0x80000057
 --@ \end{libverbatim}
 mkRCounter :: (IsModule m c) => Bit n -> m (LFSR (Bit n))
 mkRCounter seed = module
-                   _cntr :: Reg (Bit n) <- mkReg seed
+                   _cntr :: Reg (Bit n) <- mkRegA seed
                    interface
                     seed v = _cntr._write v
                     value  = _cntr._read
