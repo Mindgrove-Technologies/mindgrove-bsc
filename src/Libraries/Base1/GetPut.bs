@@ -407,7 +407,7 @@ instance (Bits a sa) => ClockConv (Put a) where
     mkConverter :: (Prelude.IsModule m c) => Integer -> Put a -> m (Put a)
     mkConverter d putuses =
         module
-          ff :: SyncFIFOIfc a <- mkSyncFIFOFromCC d (clockOf putuses)
+          ff :: SyncFIFOIfc a <- mkSyncFIFOFromCC d (clockOf putuses) (resetOf putuses)
           rules
              "dequeue":  when True  ==> action { putuses.put ff.first; ff.deq; }
           interface

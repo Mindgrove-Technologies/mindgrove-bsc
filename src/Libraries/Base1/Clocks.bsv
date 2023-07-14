@@ -723,7 +723,7 @@ endinterface
 // A general module which not use the current clock or reset
 import "BVI" SyncBit =
 module vSyncBit( Clock sClkIn, Reset sRstIn,
-                 Clock dClkIn,
+                 Clock dClkIn, Reset dRstIn,
                 SyncBitIfc#(one_bit_type) ifc )
       provisos( Bits#(one_bit_type, 1)) ;
 
@@ -736,9 +736,10 @@ module vSyncBit( Clock sClkIn, Reset sRstIn,
    input_clock clk_dst( dCLK, (*unused*)dCLK_GATE ) = dClkIn ;
 
    input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
 
    method        send ( sD_IN ) enable(sEN) clocked_by ( clk_src ) reset_by( sRstIn );
-   method dD_OUT read()                     clocked_by ( clk_dst ) reset_by( no_reset);
+   method dD_OUT read()                     clocked_by ( clk_dst ) reset_by( dRstIn);
 
       schedule read CF read ;
       schedule read CF send ;
@@ -748,19 +749,19 @@ endmodule
 //@
 //@ # 4
 module mkSyncBit ( Clock sClkIn, Reset sRst,
-                   Clock dClkIn,
+                   Clock dClkIn, Reset dRst,
                    SyncBitIfc #(one_bit_type) ifc )
    provisos( Bits#(one_bit_type, 1)) ;
 
    SyncBitIfc#(one_bit_type) ifc() ;
-   vSyncBit#(sClkIn, sRst, dClkIn) _SyncBit( ifc ) ;
+   vSyncBit#(sClkIn, sRst, dClkIn, dRst) _SyncBit( ifc ) ;
 
    return ifc ;
 endmodule
 
 
 //@ # 3
-module mkSyncBitFromCC ( Clock dClkIn,
+module mkSyncBitFromCC ( Clock dClkIn, Reset dRst,
                          SyncBitIfc #(one_bit_type) ifc )
    provisos( Bits#(one_bit_type, 1)) ;
 
@@ -768,7 +769,7 @@ module mkSyncBitFromCC ( Clock dClkIn,
    Reset sRst <- exposeCurrentReset ;
 
    SyncBitIfc#(one_bit_type) ifc() ;
-   vSyncBit #(sClk, sRst, dClkIn) _SyncBit( ifc ) ;
+   vSyncBit #(sClk, sRst, dClkIn, dRst) _SyncBit( ifc ) ;
 
    return ifc ;
 endmodule
@@ -779,9 +780,10 @@ module mkSyncBitToCC ( Clock sClkIn, Reset sRstIn,
    provisos( Bits#(one_bit_type, 1)) ;
 
    Clock dClk <- exposeCurrentClock ;
+   Reset dRst <- exposeCurrentReset ;
 
    SyncBitIfc#(one_bit_type) ifc() ;
-   vSyncBit#(sClkIn, sRstIn, dClk) _SyncBit( ifc ) ;
+   vSyncBit#(sClkIn, sRstIn, dClk, dRst) _SyncBit( ifc ) ;
 
    return ifc ;
 endmodule
@@ -1068,7 +1070,7 @@ endmodule
 
 
 import "BVI" SyncHandshake =
-module vSyncHandshake( Clock sClkIn, Reset sRstIn, Clock dClkIn, SyncPulseIfc ifc ) ;
+module vSyncHandshake( Clock sClkIn, Reset sRstIn, Clock dClkIn, Reset dRstIn, SyncPulseIfc ifc ) ;
    default_clock no_clock ;
    no_reset ;
 
@@ -1076,9 +1078,10 @@ module vSyncHandshake( Clock sClkIn, Reset sRstIn, Clock dClkIn, SyncPulseIfc if
    input_clock clk_dst( dCLK, (*unused*)dCLK_GATE ) = dClkIn ;
 
    input_reset rstn_src(sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset rstn_dst(dRST) clocked_by (clk_dst) = dRstIn ;
 
    method         send () enable(sEN) ready(sRDY)  clocked_by ( clk_src ) reset_by( rstn_src );
-   method dPulse pulse ()                          clocked_by ( clk_dst ) reset_by( no_reset );
+   method dPulse pulse ()                          clocked_by ( clk_dst ) reset_by( rstn_dst );
 
    schedule pulse CF pulse ;
    schedule pulse CF send ;
@@ -1103,22 +1106,22 @@ endmodule
 //@
 //@ # 3
 module mkSyncHandshake ( Clock sClkIn, Reset sRstIn,
-                         Clock dClkIn,
+                         Clock dClkIn, Reset dRstIn,
                          SyncPulseIfc ifc ) ;
    SyncPulseIfc ifc() ;
-   vSyncHandshake#(sClkIn, sRstIn, dClkIn) _SyncPulse( ifc ) ;
+   vSyncHandshake#(sClkIn, sRstIn, dClkIn, dRstIn) _SyncPulse( ifc ) ;
 
    return ifc ;
 endmodule
 
 //@ # 2
-module mkSyncHandshakeFromCC ( Clock dClkIn,
+module mkSyncHandshakeFromCC ( Clock dClkIn, Reset dRst,
                                SyncPulseIfc ifc ) ;
    Clock sClk <- exposeCurrentClock ;
    Reset sRst <- exposeCurrentReset ;
 
    SyncPulseIfc ifc() ;
-   vSyncHandshake#(sClk, sRst, dClkIn) _SyncPulse( ifc ) ;
+   vSyncHandshake#(sClk, sRst, dClkIn, dRst) _SyncPulse( ifc ) ;
 
    return ifc ;
 endmodule
@@ -1128,9 +1131,10 @@ endmodule
 module mkSyncHandshakeToCC ( Clock sClkIn, Reset sRstIn,
                              SyncPulseIfc ifc ) ;
    Clock dClk <- exposeCurrentClock ;
+   Reset dRst <- exposeCurrentReset ;
 
    SyncPulseIfc ifc() ;
-   vSyncHandshake#(sClkIn, sRstIn, dClk) _SyncPulse( ifc ) ;
+   vSyncHandshake#(sClkIn, sRstIn, dClk, dRst) _SyncPulse( ifc ) ;
 
    return ifc ;
 endmodule
@@ -1169,7 +1173,7 @@ endinterface: RegI
 import "BVI" SyncRegister =
 module vSyncReg#(a initValue) (
                                Clock sClkIn, Reset sRstIn,
-                               Clock dClkIn,
+                               Clock dClkIn, Reset dRstIn,
                                RegI#(a) ifc )
    provisos (Bits#(a,sa)) ;
 
@@ -1183,9 +1187,10 @@ module vSyncReg#(a initValue) (
    input_clock clk_dst( dCLK, (*unused*)dCLK_GATE ) = dClkIn ;
 
    input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
 
    method write( sD_IN ) enable (sEN) ready (sRDY)  clocked_by (clk_src) reset_by( sRstIn );
-   method dD_OUT read()                             clocked_by (clk_dst) reset_by(no_reset);
+   method dD_OUT read()                             clocked_by (clk_dst) reset_by( dRstIn);
 
       schedule read CF read ;
       schedule read CF write ;
@@ -1205,12 +1210,12 @@ endmodule
 //@ # 5
 module mkSyncReg #( a_type initValue
                    )( Clock sClkIn, Reset sRstIn,
-                      Clock dClkIn,
+                      Clock dClkIn, Reset dRstIn,
                       Reg #(a_type) ifc )
    provisos (Bits#(a_type,sa) ) ;
 
    RegI #(a_type) ifci() ;
-   vSyncReg#(initValue, sClkIn, sRstIn, dClkIn) _SyncWord( ifci ) ;
+   vSyncReg#(initValue, sClkIn, sRstIn, dClkIn, dRstIn) _SyncWord( ifci ) ;
 
    method Action _write(din);
       ifci.write( din ) ;
@@ -1224,7 +1229,7 @@ endmodule
 
 //@ # 4
 module mkSyncRegFromCC #( a_type initValue
-                         )( Clock dClkIn,
+                         )( Clock dClkIn, Reset dRst,
                             Reg #(a_type) ifc)
    provisos (Bits#(a_type,sa)) ;
 
@@ -1232,7 +1237,7 @@ module mkSyncRegFromCC #( a_type initValue
    Reset sRst <- exposeCurrentReset ;
 
    RegI#(a_type) ifci() ;
-   vSyncReg#(initValue, sClk, sRst, dClkIn) _SyncWord( ifci ) ;
+   vSyncReg#(initValue, sClk, sRst, dClkIn, dRst) _SyncWord( ifci ) ;
 
 
    method Action _write(din);
@@ -1252,9 +1257,10 @@ module mkSyncRegToCC #( a_type initValue
    provisos (Bits#(a_type,sa)) ;
 
    Clock dClk <- exposeCurrentClock ;
+   Reset dRst <- exposeCurrentReset ;
 
    RegI#(a_type) ifci() ;
-   vSyncReg#(initValue, sClkIn, sRstIn, dClk) _SyncWord( ifci ) ;
+   vSyncReg#(initValue, sClkIn, sRstIn, dClk, dRst) _SyncWord( ifci ) ;
 
    method Action _write(din);
       ifci.write( din ) ;
@@ -1339,7 +1345,7 @@ endmodule
 import "BVI" SyncFIFO1 =
 module vSyncFIFO1 (
                     Clock sClkIn, Reset sRstIn,
-                    Clock dClkIn,
+                    Clock dClkIn, Reset dRstIn,
                     SyncFIFOIfc #(a) ifc)
 
    provisos (Bits#(a,sa));
@@ -1352,11 +1358,12 @@ module vSyncFIFO1 (
    input_clock clk_dst ( dCLK, (*unused*)dCLK_GATE ) = dClkIn;
 
    input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
 
    method enq ( sD_IN )  ready(sFULL_N)  enable(sENQ) clocked_by(clk_src) reset_by(sRstIn);
-   method deq ()         ready(dEMPTY_N) enable(dDEQ) clocked_by(clk_dst) reset_by(no_reset);
-   method dD_OUT first() ready(dEMPTY_N)              clocked_by(clk_dst) reset_by(no_reset);
-   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(no_reset);
+   method deq ()         ready(dEMPTY_N) enable(dDEQ) clocked_by(clk_dst) reset_by(dRstIn);
+   method dD_OUT first() ready(dEMPTY_N)              clocked_by(clk_dst) reset_by(dRstIn);
+   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(dRstIn);
    method sFULL_N notFull()                           clocked_by(clk_src) reset_by(sRstIn);
 
       schedule first SB deq;
@@ -1458,7 +1465,7 @@ endmodule
 //@ # 5
 module mkSyncFIFO #( Integer depthIn
                     )( Clock sClkIn, Reset sRstIn,
-                       Clock dClkIn,
+                       Clock dClkIn, Reset dRstIn,
                        SyncFIFOIfc #(a_type) ifc )
    provisos (Bits#(a_type,sa));
 
@@ -1479,7 +1486,7 @@ module mkSyncFIFO #( Integer depthIn
    else begin
      (*hide*)
       _ifc <- (depthIn == 1) ?
-              vSyncFIFO1(sClkIn, sRstIn, dClkIn) :
+              vSyncFIFO1(sClkIn, sRstIn, dClkIn, dRstIn) :
 	      vSyncFIFO(depthIn, sClkIn, sRstIn, dClkIn) ;
    end
 
@@ -1498,13 +1505,13 @@ module mkSyncFIFOFull #( Integer depthIn,
                          Bool regEmpty,
                          Bool regFull
                         )( Clock sClkIn, Reset sRstIn,
-                           Clock dClkIn,
+                           Clock dClkIn, Reset dRstIn,
                            SyncFIFOIfc #(a_type) ifc )
    provisos (Bits#(a_type,sa));
 
    SyncFIFOIfc#(a_type) ifc ;
    if (regEmpty && regFull) begin
-      ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClkIn) ;
+      ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClkIn, dRstIn) ;
    end
    else begin
       ifc = error ("mkSyncFIFOFull can only be used when regEmpty and regFull are both True.");
@@ -1515,7 +1522,7 @@ endmodule
 
 //@ # 4
 module mkSyncFIFOFromCC #( Integer depthIn
-                          )( Clock dClkIn,
+                          )( Clock dClkIn, Reset dRstIn,
                              SyncFIFOIfc #(a_type) ifc)
    provisos (Bits#(a_type,sa));
 
@@ -1523,7 +1530,7 @@ module mkSyncFIFOFromCC #( Integer depthIn
    Reset sRst <- exposeCurrentReset ;
 
    (*hide*)
-   SyncFIFOIfc#(a_type) _ifc <- mkSyncFIFO(depthIn, sClk, sRst, dClkIn) ;
+   SyncFIFOIfc#(a_type) _ifc <- mkSyncFIFO(depthIn, sClk, sRst, dClkIn, dRstIn) ;
 
    return _ifc ;
 endmodule
@@ -1536,9 +1543,10 @@ module mkSyncFIFOToCC #( Integer depthIn
    provisos (Bits#(a_type,sa));
 
    Clock dClk <- exposeCurrentClock ;
+   Reset dRst <- exposeCurrentReset ;
 
    (*hide*)
-   SyncFIFOIfc#(a_type) _ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClk) ;
+   SyncFIFOIfc#(a_type) _ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClk, dRst) ;
 
    return _ifc ;
 endmodule
@@ -1548,7 +1556,7 @@ endmodule
 module mkSyncFIFOFromCCFull #( Integer depthIn,
                                Bool regEmpty,
                                Bool regFull
-                              )( Clock dClkIn,
+                              )( Clock dClkIn, Reset dRst,
                                  SyncFIFOIfc #(a_type) ifc)
    provisos (Bits#(a_type,sa));
 
@@ -1557,7 +1565,7 @@ module mkSyncFIFOFromCCFull #( Integer depthIn,
 
    SyncFIFOIfc#(a_type) ifc ;
    if (regEmpty && regFull) begin
-      ifc <- mkSyncFIFO(depthIn, sClk, sRst, dClkIn);
+      ifc <- mkSyncFIFO(depthIn, sClk, sRst, dClkIn, dRst);
    end
    else begin
       ifc = error ("mkSyncFIFOFromCCFull can only be used when regEmpty and regFull are both True.");
@@ -1576,10 +1584,11 @@ module mkSyncFIFOToCCFull #( Integer depthIn,
    provisos (Bits#(a_type,sa));
 
    Clock dClk <- exposeCurrentClock ;
+   Reset dRst <- exposeCurrentReset ;
 
    SyncFIFOIfc#(a_type) ifc ;
    if (regFull && regEmpty) begin
-      ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClk) ;
+      ifc <- mkSyncFIFO(depthIn, sClkIn, sRstIn, dClk, dRst) ;
    end
    else begin
       ifc = error ("mkSyncFIFOFromCCFull can only be used when regEmpty and regFull are both True.");
@@ -2647,7 +2656,7 @@ endinstance
 instance ClockConv#(function Action af(a x))
    provisos (Bits#(a,sa));
    module mkConverter#(Integer d)(function Action af(a x), function Action af(a x));
-      SyncFIFOIfc#(a) ff <- mkSyncFIFOFromCC(d, clockOf(af));
+      SyncFIFOIfc#(a) ff <- mkSyncFIFOFromCC(d, clockOf(af), resetOf(af));
       rule dequeue;
 	 af(ff.first);
 	 ff.deq;
