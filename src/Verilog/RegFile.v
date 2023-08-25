@@ -76,6 +76,7 @@ module RegFile(CLK, RST,
 
    reg [data_width - 1 : 0]    arr[lo:hi];
 
+   integer i;
 
 `ifdef BSV_NO_INITIAL_BLOCKS
 `else // not BSV_NO_INITIAL_BLOCKS
@@ -94,9 +95,8 @@ module RegFile(CLK, RST,
    always@(posedge CLK `BSV_ARESET_EDGE_META)
      begin
        if (RST == `BSV_RESET_VALUE) begin
-        integer                     i; 		// temporary for generate reset value
         for (i = lo; i <= hi; i = i + 1) begin
-           arr[i] = {((data_width + 1)/2){2'b10}} ;
+           arr[i] <= {((data_width + 1)/2){2'b10}} ;
         end
        end
        else if (WE)
