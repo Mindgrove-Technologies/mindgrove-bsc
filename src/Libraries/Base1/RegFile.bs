@@ -50,7 +50,7 @@ interface VRegFile ni na =
 vMkRegFile :: Bit i -> Bit i -> Module (VRegFile i a)
 vMkRegFile lo hi =
     module verilog "RegFile" (("addr_width",valueOf i), ("data_width",valueOf a),
-                              ("lo",lo), ("hi",hi)) "CLK" {
+                              ("lo",lo), ("hi",hi)) "CLK" "RST"{
         upd    = "ADDR_IN" "D_IN"{reg} "WE";
         sub[5] = "ADDR" "D_OUT";
     } [ sub < upd, sub <> sub, upd >< upd ]
@@ -124,7 +124,7 @@ mkRegFileFull = mkRegFile minBound maxBound
 vMkRegFileWCF :: Bit i -> Bit i -> Module (VRegFile i a)
 vMkRegFileWCF lo hi =
     module verilog "RegFile" (("addr_width",valueOf i), ("data_width",valueOf a),
-                              ("lo",lo), ("hi",hi)) "CLK" {
+                              ("lo",lo), ("hi",hi)) "CLK" "RST" {
         upd    = "ADDR_IN" "D_IN"{reg} "WE";
         sub[5] = "ADDR" "D_OUT";
     } [ upd <> sub, sub <> sub, upd >< upd]
@@ -159,7 +159,7 @@ vMkRegFileLoad :: Bool -> String -> Bit i -> Bit i -> Module (VRegFile i a)
 vMkRegFileLoad isBin file lo hi =
     module verilog "RegFileLoad"
       (("file", file), ("addr_width",valueOf i), ("data_width",valueOf a),
-       ("lo",lo), ("hi",hi), ("binary",pack isBin)) "CLK" {
+       ("lo",lo), ("hi",hi), ("binary",pack isBin)) "CLK" "RST"{
         upd    = "ADDR_IN" "D_IN"{reg} "WE";
         sub[5] = "ADDR" "D_OUT";
     } [ sub < upd, sub <> sub, upd >< upd ]
@@ -191,7 +191,7 @@ vMkRegFileWCFLoad :: Bool -> String -> Bit i -> Bit i -> Module (VRegFile i a)
 vMkRegFileWCFLoad isBin file lo hi =
     module verilog "RegFileLoad"
       (("file", file), ("addr_width",valueOf i), ("data_width",valueOf a),
-       ("lo",lo), ("hi",hi), ("binary",pack isBin)) "CLK" {
+       ("lo",lo), ("hi",hi), ("binary",pack isBin)) "CLK" "RST"{
         upd    = "ADDR_IN" "D_IN"{reg} "WE";
         sub[5] = "ADDR" "D_OUT";
     } [ upd <> sub, sub <> sub, upd >< upd ]

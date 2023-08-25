@@ -11,8 +11,35 @@
 `endif
 
 
+`ifdef BSV_POSITIVE_RESET
+  `define BSV_RESET_VALUE 1'b1
+  `define BSV_RESET_EDGE posedge
+`else
+  `define BSV_RESET_VALUE 1'b0
+  `define BSV_RESET_EDGE negedge
+`endif
+
+`ifdef BSV_ASYNC_RESET
+ `define BSV_ARESET_EDGE_META or `BSV_RESET_EDGE RST
+`else
+ `define BSV_ARESET_EDGE_META
+`endif
+
+`ifdef BSV_RESET_FIFO_HEAD
+ `define BSV_ARESET_EDGE_HEAD `BSV_ARESET_EDGE_META
+`else
+ `define BSV_ARESET_EDGE_HEAD
+`endif
+
+`ifdef BSV_RESET_FIFO_ARRAY
+ `define BSV_ARESET_EDGE_ARRAY `BSV_ARESET_EDGE_META
+`else
+ `define BSV_ARESET_EDGE_ARRAY
+`endif
+
+
 // Multi-ported Register File
-module RegFile(CLK,
+module RegFile(CLK, RST
                ADDR_IN, D_IN, WE,
                ADDR_1, D_OUT_1,
                ADDR_2, D_OUT_2,
@@ -26,6 +53,7 @@ module RegFile(CLK,
    parameter                   hi = 1;
 
    input                       CLK;
+   input                       RST;
    input [addr_width - 1 : 0]  ADDR_IN;
    input [data_width - 1 : 0]  D_IN;
    input                       WE;
@@ -63,10 +91,16 @@ module RegFile(CLK,
 `endif // BSV_NO_INITIAL_BLOCKS
 
 
-   always@(posedge CLK)
+   always@(posedge CLK `BSV_ARESET_EDGE_META)
      begin
-        if (WE)
-          arr[ADDR_IN] <= `BSV_ASSIGNMENT_DELAY D_IN;
+       if (RST == `BSV_RESET_VALUE) begin
+        integer                     i; 		// temporary for generate reset value
+        for (i = lo; i <= hi; i = i + 1) begin
+           arr[i] = {((data_width + 1)/2){2'b10}} ;
+        end
+       end
+       else if (WE)
+         arr[ADDR_IN] <= `BSV_ASSIGNMENT_DELAY D_IN;
      end // always@ (posedge CLK)
 
    assign D_OUT_1 = arr[ADDR_1];
