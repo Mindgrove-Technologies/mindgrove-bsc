@@ -39,7 +39,7 @@
 
 
 // Multi-ported Register File
-module RegFile(CLK, RST
+module RegFile(CLK, RST,
                ADDR_IN, D_IN, WE,
                ADDR_1, D_OUT_1,
                ADDR_2, D_OUT_2,
