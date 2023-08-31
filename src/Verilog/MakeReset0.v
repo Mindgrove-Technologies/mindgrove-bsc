@@ -32,6 +32,6 @@ module MakeReset0 (
 
    output             OUT_RST ;
 
-   assign OUT_RST = ASSERT_OUT;
+   assign OUT_RST = !ASSERT_IN;
 
 endmodule // MakeReset0
