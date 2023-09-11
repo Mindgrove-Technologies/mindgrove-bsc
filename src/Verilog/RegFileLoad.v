@@ -11,7 +11,7 @@
 
 
 // Multi-ported Register File -- initializable from a file.
-module RegFileLoad(CLK,
+module RegFileLoad(CLK, RST,
                    ADDR_IN, D_IN, WE,
                    ADDR_1, D_OUT_1,
                    ADDR_2, D_OUT_2,
@@ -27,6 +27,7 @@ module RegFileLoad(CLK,
    parameter                   binary = 0;
 
    input                       CLK;
+   input                       RST;
    input [addr_width - 1 : 0]  ADDR_IN;
    input [data_width - 1 : 0]  D_IN;
    input                       WE;
