@@ -31,6 +31,7 @@ module SyncFIFO(
                 sCLK,
                 sRST,
                 dCLK,
+                dRST,
                 sENQ,
                 sD_IN,
                 sFULL_N,
@@ -53,6 +54,7 @@ module SyncFIFO(
 
    // destination clock domain ports
    input                     dCLK ;
+   input                     dRST;
    input                     dDEQ ;
    output                    dEMPTY_N ;
    output [dataWidth -1 : 0] dD_OUT ;
@@ -77,7 +79,7 @@ module SyncFIFO(
    wire                      dNextNotEmpty;
 
    // Reset generation
-   wire                      dRST ;
+   // wire                      dRST ;
 
    // flops to sychronize enqueue and dequeue point across domains
    reg [indxWidth : 0]       dSyncReg1, dEnqPtr ;
@@ -86,7 +88,7 @@ module SyncFIFO(
    wire [indxWidth - 1 :0]   sEnqPtrIndx, dDeqPtrIndx ;
 
    // Resets
-   assign                    dRST = sRST ;
+   // assign                    dRST = sRST ;
 
    // Outputs
    assign                    dD_OUT   = dDoutReg     ;
