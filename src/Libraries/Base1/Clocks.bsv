@@ -1299,7 +1299,7 @@ import "BVI" SyncFIFO =
 module vSyncFIFO #(Integer depthIn
                   )(
                     Clock sClkIn, Reset sRstIn,
-                    Clock dClkIn,
+                    Clock dClkIn, Reset dRstIn,
                     SyncFIFOIfc #(a) ifc)
 
    provisos (Bits#(a,sa));
@@ -1321,11 +1321,12 @@ module vSyncFIFO #(Integer depthIn
    input_clock clk_dst ( dCLK, (*unused*)dCLK_GATE ) = dClkIn;
 
    input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
 
    method enq ( sD_IN )  ready(sFULL_N)  enable(sENQ) clocked_by(clk_src) reset_by(sRstIn);
-   method deq ()         ready(dEMPTY_N) enable(dDEQ) clocked_by(clk_dst) reset_by(no_reset);
-   method dD_OUT first() ready(dEMPTY_N)              clocked_by(clk_dst) reset_by(no_reset);
-   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(no_reset);
+   method deq ()         ready(dEMPTY_N) enable(dDEQ) clocked_by(clk_dst) reset_by(dRstIn);
+   method dD_OUT first() ready(dEMPTY_N)              clocked_by(clk_dst) reset_by(dRstIn);
+   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(dRstIn);
    method sFULL_N notFull()                           clocked_by(clk_src) reset_by(sRstIn);
 
       schedule first SB deq;
@@ -1487,7 +1488,7 @@ module mkSyncFIFO #( Integer depthIn
      (*hide*)
       _ifc <- (depthIn == 1) ?
               vSyncFIFO1(sClkIn, sRstIn, dClkIn, dRstIn) :
-	      vSyncFIFO(depthIn, sClkIn, sRstIn, dClkIn) ;
+	      vSyncFIFO(depthIn, sClkIn, sRstIn, dClkIn, dRstIn) ;
    end
 
    return _ifc ;
