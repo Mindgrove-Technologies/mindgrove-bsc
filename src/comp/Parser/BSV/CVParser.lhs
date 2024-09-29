@@ -31,7 +31,6 @@
 > import Flags(Flags, DumpFlag(..),
 >              stdlibNames, disableAssertions, preprocessOnly, genName)
 > import Util
-> import ListUtil(mapFst)
 > import Parser.BSV.CVParserCommon
 > import Parser.BSV.CVParserImperative
 > import Pragma
@@ -901,7 +900,7 @@ if prefix is provided, sub-union and sub-struct constructors start with it
 > pTypedefStructField =
 >         do mkSubUnion <- pTypedefTaggedUnionType False False
 >            let mkField prefix params derivs =
->                    let ((name, fieldConstr, [_]), defns) =
+>                    let ((name, fieldConstr, _), defns) =
 >                            mkSubUnion prefix params derivs
 >                    in  (CField { cf_name = name,
 >                                  cf_pragmas = Nothing,
@@ -1002,7 +1001,7 @@ if prefix is provided, sub-union and sub-struct constructors start with it
 >            return mkField
 >     <|> do mkSubUnion <- pTypedefTaggedUnionType False True
 >            let mkField prefix enc params derivs =
->                    let ((name, typeConstr, fieldTypes@[_]), defns) =
+>                    let ((name, typeConstr, fieldTypes), defns) =
 >                            mkSubUnion prefix params derivs
 >                        original_summands =
 >                            COriginalSummand { cos_names = [name],
@@ -2262,7 +2261,12 @@ if both fail, the error messages will come from the more likely alternative.
 >                       pImperativeLet decl_atts bind_atts flags pos)
 >                 <|> (pKeyword SV_KW_match >> noAttrs_ >>
 >                       pImperativePatternDecl flags)
->                 <|> try pVarTypeCases
+>                 <|> try (do
+>                      -- require a match of the whole statement, to avoid parsing just
+>                      -- the start of a naked expression that begins with a variable
+>                      s <- pVarTypeCases
+>                      lookAhead pSemi
+>                      return s)
 >                 <|> try (do
 >                      when (not $ allowNakedExpr flags) (fail "naked expression")
 >                      e <- pExpression
@@ -2389,8 +2393,10 @@ must be bound (no mix and match of eq, decl only, bind with the same attrib).
 >        pSemi
 >        innards <- ( do prs <- try $ many1 (do as <- pAttributes
 >                                               ir <- pImperativeRule as flags
->                                               let [ISRule _ _ ps r] = ir
->                                               return (ps,r)
+>                                               return $
+>                                                 case ir of
+>                                                   [ISRule _ _ ps r] -> (ps, r)
+>                                                   _ -> internalError "pImperativeRule innards"
 >                                           )
 >                        return (RRules prs)
 >                    <|>
@@ -2518,7 +2524,9 @@ which calls us.
 >     do let ctxt = stmtContext flags
 >            forInitFlags =
 >                nullImperativeFlags { allowEq = (ctxt /= ISCSequence),
->                                      allowRegWrite = (ctxt == ISCSequence) }
+>                                      allowRegWrite = (ctxt == ISCSequence),
+>                                      allowSubscriptAssign = (ctxt == ISCSequence),
+>                                      allowFieldAssign = (ctxt == ISCSequence) }
 >        initStmtss <-
 >            pCommaSep1 (pImperativeDeclOrAssign [] forInitFlags False)
 >                           <?> "for-statement initialization"
@@ -3388,6 +3396,8 @@ The same, but reads an output port name instead of a type
 >        ((pImperativeWithCallRegWrite flags pos primy >>= noBindAttrs)
 >         <|> (pImperativeWithCallEq flags primy >>= noBindAttrs)
 >         <|> pImperativeWithCallBind bind_atts flags primy
+>         -- Naked expressions are accepted here, so that a helpful error
+>         -- for that situation can be given (EForbiddenNakedExprInExprBlock).
 >         <|> (pImperativeWithExprNakedExpr flags pos primy >>= noBindAttrs))
 > pImperativeWithVarCall bind_attrs flags vars =
 >     failWithErr (getIdOrTuplePosition vars, EForbiddenTuple)
@@ -4746,7 +4756,7 @@ parameters to the parsers that might take them.
 >            endpackage = maybe (return ())
 >                         (pEndClause SV_KW_endpackage . Just) pkgId
 >        when (not (null selfImports)) -- prohibit importing self
->             (let (badImp : _) = selfImports
+>             (let badImp = head selfImports
 >                  badImpPos = getPosition badImp
 >                  emsg = ECircularImports [pvpString badImp]
 >              in  failWithErr (badImpPos, emsg))
@@ -5436,8 +5446,9 @@ Convert argument strings of attributes to CSchedulePragmas etc.
 >                      return els
 >     result <- pAttributeWithParser pInside p s
 >     return (if doingPreempts
->             then (let [(is1,_,is2)] = result
->                   in SPPreempt is1 is2)
+>             then case result of
+>                    [(is1,_,is2)] -> SPPreempt is1 is2
+>                    _ -> internalError "psScheduling: unexpected preempts result"
 >             else SPSchedule (mkMethodConflictInfo result))
 
 > psPerfSpec :: Position -> String -> SV_Parser PProp

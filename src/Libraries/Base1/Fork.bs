@@ -5,7 +5,7 @@ import Vector
 --@ \subsubsection{Fork}
 --@
 --@ \index{Enum@\te{Fork} (package)|textbf}
---@ The {\blue} compiler does very aggressive common subexpression
+--@ The {\Blue} compiler does very aggressive common subexpression
 --@ elimination (CSE).  If this has to be circumvented it has to be done
 --@ explicitly.  The \te{Fork} package provides various ways to duplicate
 --@ values to avoid CSE.
@@ -20,7 +20,7 @@ foreign vfork :: Bit n -> Bit m = "Fork",("i","o")
 --@   provisos (Bits#(a, sa));
 --@ \end{libverbatim}
 fork :: (Bits a sa) => a -> (a, a)
-fork = unpack · vfork · pack
+fork = unpack âˆ˜ vfork âˆ˜ pack
 
 --@ Copy a value into a list with the specified number of elements.
 --@ \begin{libverbatim}

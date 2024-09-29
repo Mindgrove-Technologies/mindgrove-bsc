@@ -2,9 +2,10 @@ module AConv (aConv, aTypeConv, isLocalAId) where
 
 import Util(itos, headOrErr, initOrErr, lastOrErr, log2, concatMapM, makePairs)
 import qualified Data.Map as M
-import Control.Monad.State hiding (forM)
-import ErrorTCompat
-import Control.Monad.Reader hiding (forM)
+import Control.Monad(when, liftM, forM, zipWithM)
+import Control.Monad.Except(throwError)
+import Control.Monad.State(StateT, runStateT, gets, get, put)
+import Control.Monad.Reader(ReaderT, runReaderT, withReaderT, ask)
 import PPrint(ppReadable, ppString)
 import PFPrint(pfpString)
 import Position
@@ -32,8 +33,6 @@ import VModInfo(lookupOutputClockWires, lookupOutputResetWire,
                 lookupIfcInoutWire, vArgs, VArgInfo(..))
 import SignalNaming
 import InstNodes(mkInstTree)
-
-import Data.Traversable(forM)
 
 -- import Wires
 
@@ -519,7 +518,7 @@ aExpr e@(IAps (ICon m (ICSel { })) _
                 Nothing -> internalError
                                ("aExpr: avValue_ on ICForeign without fcallNo")
                 Just val -> val
-        t@(ATBit _) = aTypeConvE e (iGetType e)
+        t = aTypeConvE e (iGetType e)
     in
         return (ATaskValue t i name isC n)
 
@@ -534,7 +533,7 @@ aExpr e@(IAps (ICon m (ICSel { })) _
                 Nothing -> internalError
                                ("aExpr: avValue_ on ICForeign without fcallNo")
                 Just val -> val
-        t@(ATBit _) = aTypeConvE e (iGetType e)
+        t = aTypeConvE e (iGetType e)
     in
         -- the value side carries no arguments
         -- the cookie "n" will connect it back up to the action side
@@ -966,4 +965,6 @@ eTrunc errh n e =
     then let e' = IAps (icSelect noPosition) [ITNum n, ITNum 0, ITNum k] [e]
          in  fst (iTransExpr errh e')
     else e
-  where ATBit k = aTypeConvE e (iGetType e)
+  where k = case aTypeConvE e (iGetType e) of
+              ATBit sz -> sz
+              _ -> internalError "AConv.eTrunc: unexpected type"

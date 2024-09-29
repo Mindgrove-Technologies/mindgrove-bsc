@@ -90,13 +90,13 @@ proc time_walk {} {
     global LOCAL_TIME_WALK
     if {[info exists LOCAL_TIME_WALK] && $LOCAL_TIME_WALK} {
         if [file exists [time_file] ] {
-            verbose -log [exec perl $collator [time_file] ] 0
+            verbose -log [exec perl -C $collator [time_file] ] 0
         }
     } else {
         #depending on exactly how --outdir is used, this may or may not do the right thing.
         #  it does do the right thing if outdir is not set, or if it "."
         verbose -log " running (find . -name [file tail [time_file]] ) out of this directory: [pwd]"
-        verbose -log [exec find . -name [file tail [time_file]] -exec cat \{\} \; | perl $collator ] 0
+        verbose -log [exec find . -name [file tail [time_file]] -exec cat \{\} \; | perl -C $collator ] 0
     }
 }
 
@@ -198,6 +198,15 @@ proc which_os {} {
         exit 1
     }
     return $env(OSTYPE)
+}
+
+proc which_mach {} {
+    global env
+    if {! [info exists env(MACHTYPE)]} {
+        perror "can't find architecture -- set MACHTYPE to the name"
+        exit 1
+    }
+    return $env(MACHTYPE)
 }
 
 # return true if the given Bluetcl packahe is available
@@ -446,18 +455,33 @@ proc get_default_bsdir {} {
 }
 
 proc get_bsc_version {} {
-    global bsc
+    global bluetcl
 
-    if {$bsc != 0} then {
-        set helloworld [exec $bsc -v]
-        regexp "version .*" $helloworld version
-        if {![info exists version]} then {
-            #warning "Couldn't determine version of $bsc from `$helloworld'"
-            set version "unknown version"
-        }
-    } else { # this should have been detected
-        warning "Can't find bsc to determine version"
-        set version "unknown version"
+    bluetcl_initialize
+
+    if { [catch "exec echo \"puts \\\[::Bluetcl::version bsc\\\]\" | $bluetcl" version] } {
+        perror "failed to execute bluetcl to get BSC version: $version"
+        exit 1
+    }
+    if { $version == "" } {
+        perror "BSC version is empty"
+        exit 1
+    }
+    return $version
+}
+
+proc get_ghc_version {} {
+    global bluetcl
+
+    bluetcl_initialize
+
+    if { [catch "exec echo \"puts \\\[::Bluetcl::version ghc\\\]\" | $bluetcl" version] } {
+        perror "failed to execute bluetcl to get GHC version: $version"
+        exit 1
+    }
+    if { $version == "" } {
+        perror "GHC version is empty"
+        exit 1
     }
     return $version
 }
@@ -633,7 +657,7 @@ proc perl { program file out_file  } {
     global subdir
     set here [absolute $srcdir]
     cd [file join $here $subdir]
-    set status [catch "exec perl $program $file > $out_file"]
+    set status [catch "exec perl -C $program $file > $out_file"]
     cd $here
     return $status
 }
@@ -1537,7 +1561,7 @@ proc compile_verilog_fail_no_internal_error {name} {
 
         if [compile_verilog_fail $name] then {
         } else {
-            find_n_strings "$name.bsc-vcomp-out" {Internal.*Error} 0
+            find_regexp_fail [make_bsc_vcomp_output_name $name] {Internal.*Error}
         }
     }
 }
@@ -3177,6 +3201,12 @@ set_warning_threshold 0
 set bsdir [get_bsdir]
 verbose -log "Bluespec dir: $bsdir" 1
 
+set bsc_version [get_bsc_version]
+verbose -log "Bluespec version: $bsc_version" 1
+
+set ghc_version [get_ghc_version]
+verbose -log "Bluespec tools compiled with GHC version: $ghc_version" 1
+
 get_test_options
 verbose -log "Do verilog backend tests is $vtest" 1
 verbose -log "Do c backend tests is $ctest" 1
@@ -3188,6 +3218,7 @@ verbose -log "Do internal checks is [do_internal_checks]" 1
 # System settings
 
 verbose -log "Operating system is [which_os]" 1
+verbose -log "Architecture is [which_mach]" 1
 
 # Assume 64-bit
 set ::is64 "64"
@@ -3235,6 +3266,8 @@ proc bsc_initialize {} {
     global bsc_initialized
     global env
     global bsc
+    global bsc_version
+    global ghc_version
     global bsdir
     global showrules
 
@@ -3251,7 +3284,6 @@ proc bsc_initialize {} {
 
         # find bsc and version and bs prelude
         set bsc [which_bsc]
-        set bsc_version [get_bsc_version]
 
         # These functions insist that the binaries be available.
         # Since they are only used for internal tests, we should only insist on
@@ -3275,6 +3307,7 @@ proc bsc_initialize {} {
         }
 
         verbose -log "Using $bsc ($bsc_version) for tests." 1
+        verbose -log "BSC was compiled with GHC version $ghc_version." 1
         verbose -log "Compiler options: $::env(BSC_OPTIONS)" 1
         if [do_internal_checks] {
             verbose -log "Path to dumpbo: $dumpbo" 1

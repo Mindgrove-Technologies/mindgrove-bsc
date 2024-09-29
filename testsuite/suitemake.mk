@@ -7,10 +7,13 @@ ifneq ($(TEST_OSTYPE), $(findstring $(TEST_OSTYPE), Linux Darwin))
   $(error TEST_OSTYPE environment not recognized: $(TEST_OSTYPE))
 endif
 
+TEST_MACHTYPE ?= $(shell $(CONFDIR)/../platform.sh machtype)
+# TODO: Test for expected architectures?
+
 MAKEFLAGS += --no-print-directory
 
 # Make sure that the environments are consistent
-LC_ALL = C
+LC_ALL = en_US.UTF-8
 export LC_ALL
 
 # Immediate subdirs with Makefiles, so we can recurse into them
@@ -64,7 +67,9 @@ RUNTESTENV = MAKEFLAGS= BSCTEST=1 \
 	BSC_VERILOG_SIM=$(TEST_BSC_VERILOG_SIM) \
 	TEST_CONFIG_DIR=${TEST_CONFIG} \
 	BLUETCL=$(TEST_BLUETCL) \
-	OSTYPE=$(TEST_OSTYPE) LC_ALL=$(LC_ALL) \
+	OSTYPE=$(TEST_OSTYPE) \
+	MACHTYPE=$(TEST_MACHTYPE) \
+	LC_ALL=$(LC_ALL) \
 	SYSTEMC_INC=$(TEST_SYSTEMC_INC) \
 	SYSTEMC_LIB=$(TEST_SYSTEMC_LIB) \
 	SYSTEMC_CXXFLAGS=$(TEST_SYSTEMC_CXXFLAGS) \

@@ -7,7 +7,6 @@ import Data.Char
 -- import Data.Ratio
 import qualified Data.Set as S
 
--- import ListUtil
 import Util(itos)
 import Position
 import Error(internalError, ErrMsg(..))
@@ -415,19 +414,12 @@ isSym c | c >= '\x80' = c `elem` ['\162', '\163', '\164', '\165', '\166',
                                   '\177', '\178', '\179', '\180', '\181',
                                   '\183', '\184', '\185', '\186', '\187',
                                   '\188', '\189', '\190', '\191', '\215',
-                                  '\247' ]
-
---isSym c | c >= '\x80' = isSymbol c
+                                  '\247' ] || (isSymbol c && not (isIdChar c))
 isSym _ = False
 
 isIdChar :: Char -> Bool
 isIdChar '\'' = True
 isIdChar '_' = True
-
--- \176 (hexB0) (octal 0260) is the degree symbol
-isIdChar '\176' = True
--- \180 (hexB4) (octal 0264) is the prime (acute accent) symbol
-isIdChar '\180' = True
 isIdChar c = isAlphaNum c
 
 isBinDigit :: Char -> Bool

@@ -2,10 +2,12 @@
 
 # Bluespec Compiler
 
-[![Version]](https://github.com/B-Lang-org/bsc/releases/tag/2023.01) [![License]](./COPYING) [![Build Status]](https://github.com/b-lang-org/bsc/actions?query=workflow%3ACI+event%3Apush)
+[![Version]](https://github.com/B-Lang-org/bsc/releases/tag/2024.07)
+[![License]](./COPYING)
+[![Build Status]](https://github.com/b-lang-org/bsc/actions?query=workflow%3ACI+event%3Apush)
 
 [License]:        https://img.shields.io/badge/license-BSD%203-blueviolet.svg
-[Version]:        https://img.shields.io/badge/release-2023.01-red.svg?logo=v
+[Version]:        https://img.shields.io/badge/release-2024.07-red.svg?logo=v
 [Build Status]:   https://github.com/b-lang-org/bsc/workflows/CI/badge.svg?branch=main&event=push
 
 **[Community] &bull; [Download] &bull; [Documentation] &bull; [Build] &bull; [Test]**
@@ -92,7 +94,11 @@ For the following systems, the Bluespec toolchain is available
 as a package that can be installed with the standard package manager:
 
 * ArchLinux AUR: [`bluespec-git`](https://aur.archlinux.org/packages/bluespec-git/) ([among others](https://aur.archlinux.org/packages/?K=bluespec))
+* Gentoo GURU and LiGurOS: [`sci-electronics/bluespec`](https://gitweb.gentoo.org/repo/proj/guru.git/tree/sci-electronics/bluespec)
 * Nix/NixOS: [`bluespec`](https://search.nixos.org/packages?channel=20.09&from=0&size=50&sort=relevance&query=bluespec)
+
+You can also use the [Repology search engine](https://repology.org/project/bluespec/versions)
+to check for Bluespec packages for your system.
 
 If a package exists for your system, we recommend installing that.
 Otherwise, a tar-archive may be available for download from our
@@ -126,6 +132,10 @@ from the [Releases](https://github.com/B-Lang-org/bsc/releases) page.
 
 Training and tutorials can be found in the [BSVLang
 repository](https://github.com/BSVLang/Main).
+
+New users may also find this
+[Intro Guide and Quick Reference](https://github.com/kcamenzind/BluespecIntroGuide)
+useful.
 
 ---
 

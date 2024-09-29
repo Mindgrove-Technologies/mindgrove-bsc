@@ -8,6 +8,8 @@ import System.Process(system)
 import System.Exit(ExitCode(..))
 import System.Directory(getModificationTime)
 import System.Time -- XXX: in old-time package
+import System.IO.Error(ioeGetErrorType)
+import GHC.IO.Exception(IOErrorType(..))
 import Data.Time.Clock.POSIX(utcTimeToPOSIXSeconds)
 import qualified Control.Exception as CE
 import qualified Data.Map as DM
@@ -17,7 +19,7 @@ import SCC(tsort)
 import Flags
 import Backend
 import Pragma(Pragma(..),PProp(..))
-import Position(noPosition)
+import Position(noPosition, filePosition)
 import Error(internalError, EMsg, ErrMsg(..), ErrorHandle, bsError,
              exitFailWith, bsWarning)
 import PFPrint
@@ -86,7 +88,10 @@ chkDeps errh flags name = do
                                ECircularImports (map ppReadable cycle))]
             Right ns -> do
                 let -- the pkginfo of all depended modules
-                    pis' = [ pi | n <- ns, let Just pi = findInfo n pis ]
+                    pis' = let getInfo n = case findInfo n pis of
+                                             Just pi -> pi
+                                             _ -> internalError "Depend.chkDeps: pis'"
+                           in  map getInfo ns
                     -- names of files resulting from codegen, if we want
                     -- to return them, for a linking stage to use
                     --genfs = concatMap (getGenFs flags) pis'
@@ -343,9 +348,18 @@ flags in the CC variable, for example CC="cc -g", then it will work.
                 exitFailWith errh n
     else readFileCatch errh noPosition name
 
+-- wrapper to detect file encoding errors (which are detected lazily)
 parseSrc :: Bool -> ErrorHandle -> Flags -> Bool -> String -> String ->
             IO (CPackage, TimeInfo)
-parseSrc True errh flags show_warns filename inp = do
+parseSrc classic errh flags show_warns filename inp = CE.handleJust isEncErr handleErr $ parseSrc' classic errh flags show_warns filename inp
+    where isEncErr :: CE.IOException -> Maybe CE.IOException
+          isEncErr e | InvalidArgument <- ioeGetErrorType e = Just e
+                     | otherwise = Nothing
+          handleErr _ = bsError errh [(filePosition $ mkFString filename, ENotUTF8)]
+
+parseSrc' :: Bool -> ErrorHandle -> Flags -> Bool -> String -> String ->
+            IO (CPackage, TimeInfo)
+parseSrc' True errh flags show_warns filename inp = do
   -- Classic parser
   t <- getNow
   let dumpnames = (baseName (dropSuf filename), "", "")
@@ -358,7 +372,7 @@ parseSrc True errh flags show_warns filename inp = do
                       when (show_warns && (not $ null ws)) $ bsWarning errh ws
                       return (pkg, t)
       Left errs -> bsError errh errs
-parseSrc False errh flags show_warns filename inp =
+parseSrc' False errh flags show_warns filename inp =
   -- BSV parser
   bsvParseString errh flags show_warns filename (baseName $ dropSuf filename) inp
 

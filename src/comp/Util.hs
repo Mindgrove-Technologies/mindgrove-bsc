@@ -2,9 +2,10 @@
 module Util where
 
 import Data.Char(intToDigit)
-import Data.Word(Word32,Word64)
+import Data.Word(Word8,Word32,Word64)
 import Data.Bits
 import Data.List(sort, sortBy, group, groupBy, nubBy, union, foldl')
+import Data.Bifunctor(first,second)
 import Control.Monad(foldM)
 import Debug.Trace(trace)
 import qualified Data.Set as S
@@ -162,6 +163,17 @@ lastOrErr _   [x]    = x
 lastOrErr err (_:xs) = lastOrErr err xs
 lastOrErr err []     = internalError err
 
+unconsOrErr :: String -> [elem] -> (elem, [elem])
+unconsOrErr _   (elt:rest) = (elt, rest)
+unconsOrErr err []         = internalError err
+
+take2OrErr :: String -> [elem] -> (elem, elem)
+take2OrErr _ (x1:x2:_) = (x1, x2)
+take2OrErr err _ = internalError err
+
+take3OrErr :: String -> [elem] -> (elem, elem, elem)
+take3OrErr _ (x1:x2:x3:_) = (x1, x2, x3)
+take3OrErr err _ = internalError err
 
 rTake, rDrop :: Int -> [a] -> [a]
 rTake n = reverse . take n . reverse
@@ -291,16 +303,21 @@ concatUnzip3 xyzs =
     let (xss, yss, zss) = unzip3 xyzs
     in  (concat xss, concat yss, concat zss)
 
---mapFst f xys = [(f x, y) | (x,y)<-xys]
+mapFst :: Functor f => (a -> b) -> f (a, c) -> f (b, c)
+mapFst = fmap . first
 
---mapSnd f xys = [(x, f y) | (x,y)<-xys]
+mapSnd :: Functor f => (a -> b) -> f (c, a) -> f (c, b)
+mapSnd = fmap . second
 
 mapThd :: (t -> c) -> [(a, b, t)] -> [(a, b, c)]
 mapThd f xyzs = [(x, y, f z) | (x, y, z) <- xyzs]
 
 joinByFst :: (Ord a) => [(a, b)] -> [(a, [b])]
 joinByFst =
-    map (\ xys@((x,_):_) -> (x, map snd xys)) .
+  let joinSameFirst xys@((x,_):_) = (x, map snd xys)
+      joinSameFirst _ = internalError "joinByFst"
+  in
+    map joinSameFirst .
     groupBy (\ (x,_) (y,_) -> x==y) .
     sortBy (\ (x,_) (y,_) -> x `compare` y)
 
@@ -346,6 +363,9 @@ appFstM f (a, b) = do c <- f a
 nubByFst :: (Eq a) => [(a, b)] -> [(a, b)]
 nubByFst xs = nubBy f xs
   where f a b = (fst a == fst b)
+
+sortPair :: (Ord a) => (a, a) -> (a, a)
+sortPair (x, y) = if (y < x) then (y, x) else (x, y)
 
 -- =====
 -- List/Either utilities
@@ -586,9 +606,9 @@ hashInit = Hash 0 4000000063
 
 -- showpair (x,y) = "(" ++ (showHex x ("," ++ (showHex y ")")))
 
-nextHash :: Hash -> String -> Hash
+nextHash :: Hash -> [Word8] -> Hash
 nextHash h s = foldl' f h s
-    where f :: Hash -> Char -> Hash
+    where f :: Hash -> Word8 -> Hash
           f (Hash x y) c =
               let y' = (rotate x 5) + (toEnum (fromEnum c))
                   x' = y + y' + 1442968193

@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
-brew install mactex-no-gui
+brew update
+
+brew install texlive

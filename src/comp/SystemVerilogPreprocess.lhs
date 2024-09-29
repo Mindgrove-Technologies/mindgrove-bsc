@@ -5,6 +5,7 @@ Preprocessor for SystemVerilog
 > module SystemVerilogPreprocess(preprocess) where
 
 > import Data.List
+> import Data.Char(isLetter, isDigit)
 > import Control.Monad (when)
 
 > import Position
@@ -161,26 +162,31 @@ Toplevel scanner function
 >                                          c:restOfInput ), env, errh, flgs))
 >     | isWhitespace c =
 >         let
->             (ws, cl1:trest) = span (isWhitespace) restOfInput
->             orest = if (cl1 /= '`') then
->                       (cl1:trest)
->                     else
->                       let
->                        (str,_) = (prescanReplace errh trest pos env)
->                       in
->                        str
->             (ws2, cl:rest) = span (isWhitespace) orest
->             delimiter =
->                 case cl of
->                     '\"' -> (/= '\"')
->                     '<'  -> (/= '>')
+>             (ws, restOfInput2) = span (isWhitespace) restOfInput
+>             restOfInput3 = case restOfInput2 of
+>                       ('`':rest) -> fst (prescanReplace errh rest pos env)
+>                       -- EOF (empty list) will be handled below
+>                       _ -> restOfInput2
+>             (ws2, restOfInput4) = span (isWhitespace) restOfInput3
+>             (delim1, delim2, restOfInput5) =
+>                 case restOfInput4 of
+>                     ('\"':rest) -> ('\"', '\"', rest)
+>                     ('<':rest)  -> ('<',  '>',  rest)
+>                     -- The following also handles EOF (empty list)
 >                     _    -> let pos' = updatePosString pos
 >                                            ("`include" ++ (c:ws))
 >                             in  bsErrorUnsafe errh [(pos', ESVPNoImportDelimiter)]
->             (filestr, cr:furtherInput) = span delimiter rest
->             newPos = (updatePosString pos ("`include" ++ (c:ws) ++
->                                            (cl1:ws2)   ++
->                                            (cl:filestr) ++ (cr:[])))
+>             (filestr, restOfInput6) = span (/= delim2) restOfInput5
+>             furtherInput =
+>               case restOfInput6 of
+>                 (h:rest) | (h == delim2) -> rest
+>                 -- The following also handles EOF (empty list)
+>                 _ -> -- XXX ESVPNoImportDelimiter isn't quite right
+>                      let pos' = updatePosString pos
+>                                     ("`include" ++ (c:ws) ++ (delim1:filestr))
+>                      in  bsErrorUnsafe errh [(pos', ESVPNoImportDelimiter)]
+>             newPos = updatePosString pos ("`include" ++ (c:ws) ++ ws2 ++
+>                                           (delim1:filestr) ++ [delim2])
 >             missingFileErr =
 >                  bsError errh [(pos, EMissingIncludeFile filestr)]
 >         in
@@ -227,16 +233,20 @@ Toplevel scanner function
 >              "timescale","unconnected_drive","undef", "bluespec",
 >              "BLUESPEC"]
 >            acquireblock :: String -> (String,String)
->            acquireblock ('/':'/':input) = let
->                                              (line, cr:rest) = span (/= '\n') input
->                                            in
->                                              if ((not (null line)) && (last line) == '\\') then
->                                                 let -- non-terminating line comment
->                                                    (l,r) = (acquireblock rest)
->                                                 in
->                                                   ('/':'/':line ++(cr:l),r)
->                                               else
->                                                 ([],'/':'/':input) -- line comment which ends it
+>            acquireblock ('/':'/':input) =
+>              let
+>                (line, rest) = span (/= '\n') input
+>              in
+>                if ((not (null line)) && (last line) == '\\') then
+>                  -- non-terminating line comment
+>                  case rest of
+>                    (cr:rest') -> let (l,r) = acquireblock rest
+>                                  in  ('/':'/':line ++(cr:l),r)
+>                    -- EOF
+>                    -- XXX Should this be an error?
+>                    [] -> ('/':'/':line, [])
+>                else
+>                  ([],'/':'/':input) -- line comment which ends it
 >            acquireblock ('/':'*':input) =
 >                 let -- treat like a single line
 >                    finishMultiline [] = ([],[])
@@ -540,8 +550,9 @@ Split a comma separated string into a list of parameters while:
 >          ppsplit' False cnt ('`':'l':'i':'n':'e':c:rest) | (isWhitespace c) =
 >             ppsplit' False cnt ('`':'l':'i':'n':'e':rest)
 >          ppsplit' False cnt ('`':'l':'i':'n':'e':'(':rest) =
->             let (a:b) = ppsplit' True cnt rest
->             in  (('`':'l':'i':'n':'e':'(':a):b)
+>             case ppsplit' True cnt rest of
+>               (a:b) -> (('`':'l':'i':'n':'e':'(':a):b)
+>               _ -> internalError ("ppsplit_params: `line is missing closing paren")
 >          ppsplit' False cnt [] = []
 >          ppsplit' False cnt ('(':rest) =
 >             cons_fst '(' (ppsplit' False (cnt + 1) rest)
@@ -721,19 +732,19 @@ SYSTEM VERILOG CHARACTER CLASSES
 > isHorizontalWhitespace '\t' = True
 > isHorizontalWhitespace _ = False
 
-Does a character start a valid identifier? (SV 3.1a LRM A.9.3)
+Does a character start a valid identifier?
 
 > isIdStart :: Char -> Bool
 > isIdStart '_' = True -- might be faster as a full table
-> isIdStart c   = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+> isIdStart c   = isLetter c
 
-Does a character continue a valid identifier? (SV 3.1a LRM A.9.3)
+Does a character continue a valid identifier?
 
 > isIdChar :: Char -> Bool
 > isIdChar '_' = True -- might be faster as a full table
 > isIdChar '$' = True
-> isIdChar c   = ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
->                 || (c >= '0' && c <= '9'))
+> isIdChar c   = isLetter c || isDigit c
+
 
 UTILITY FUNCTIONS
 

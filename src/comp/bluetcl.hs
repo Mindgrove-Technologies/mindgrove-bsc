@@ -13,7 +13,8 @@ module BlueTcl where
 import HTcl
 
 import Control.Monad(foldM, when, mzero)
-import ErrorTCompat
+import Control.Monad.Trans(lift)
+import Control.Monad.Except(ExceptT, runExceptT, throwError)
 import Control.Concurrent
 import qualified Control.Exception as CE
 import System.IO.Error(ioeGetErrorString)
@@ -36,7 +37,7 @@ import Util(quote, concatMapM, concatUnzip3, lastOrErr, fromJustOrErr,
             thd, readOrErr)
 import IOUtil(getEnvDef)
 
-import ListUtil(mapFst, mapSnd)
+import Util(mapFst, mapSnd)
 import TclUtils
 import GHCPretty()
 
@@ -46,7 +47,7 @@ import Flags(Flags(..), verbose)
 import FlagsDecode(defaultFlags, decodeFlags, adjustFinalFlags, updateFlags,
                    showFlagsLst, showFlagsAllLst, getFlagValueString)
 import Error(internalError, EMsg, ErrMsg(..), showErrorList,
-             ErrorHandle, initErrorHandle, convErrorTToIO)
+             ErrorHandle, initErrorHandle, convExceptTToIO)
 import Id
 import PPrint
 import PVPrint
@@ -348,6 +349,8 @@ helpCmd interp [_,cmd] = do
                    isArg _                     = False
                    isKW (Just (Keyword _ _ _)) = True
                    isKW _                      = False
+                   isKWorNone Nothing          = True
+                   isKWorNone e                = isKW e
                    matched' = dropWhile isArg matched
                    cmd_words = map fst (reverse matched')
                let cmd_objs = take (length cmd_words) os
@@ -372,7 +375,7 @@ helpCmd interp [_,cmd] = do
                           else [ "", ld ]
                    subtopics = case g' of
                                  (ChooseFrom gs) ->
-                                     if (all isKW (map htclFirstCmdElem gs))
+                                     if (all isKWorNone (map htclFirstCmdElem gs))
                                      then [ "", "Subcommands: " ] ++
                                           [ "  " ++ name ++ descr
                                           | gr <- gs
@@ -399,12 +402,36 @@ helpCmd interp objs = htclCheckCmd helpGrammar fn interp objs
 --------------------------------------------------------------------------------
 
 versionGrammar :: HTclCmdGrammar
-versionGrammar = tclcmd "version" namespace helpStr ""
+versionGrammar = (tclcmd "version" namespace helpStr longHelpStr) .+.
+                 (optional $ oneOf [ kw "bsc" bscHelpStr ""
+                                   , kw "ghc" ghcHelpStr ""
+                                   ])
     where helpStr = "Returns version information for Bluespec software"
+          longHelpStr = init $ unlines
+                        [ "If no argument is provided, the subcommand 'bsc' is assumed." ]
+          bscHelpStr = "Show BSC version information"
+          ghcHelpStr = "Show the GHC version used to compile BSC"
 
-versionNum :: [String] -> IO [String]
-versionNum [] = return $ [versionname, buildVersion]
+versionNum :: [String] -> IO HTclObj
+versionNum [] = versionNum ["bsc"]
+versionNum ["bsc"] = return $ TLst [TStr versionname, TStr buildVersion]
+versionNum ["ghc"] = return $ TStr ghcVersionStr
 versionNum xs = internalError $ "versionNum: grammar mismatch: " ++ (show xs)
+
+ghcVersionStr :: String
+#if defined(__GLASGOW_HASKELL_FULL_VERSION__)
+ghcVersionStr = __GLASGOW_HASKELL_FULL_VERSION__
+#else
+ghcVersionStr =
+  let version_raw :: Int = __GLASGOW_HASKELL__
+      (major, minor) :: (Int, Int) = version_raw `divMod` 100
+#if defined(__GLASGOW_HASKELL_PATCHLEVEL1__)
+      patch1 :: Int = __GLASGOW_HASKELL_PATCHLEVEL1__
+  in  show major ++ "." ++ show minor ++ "." ++ show patch1
+#else
+  in  show major ++ "." ++ show minor
+#endif
+#endif
 
 --------------------------------------------------------------------------------
 -- flags
@@ -974,7 +1001,7 @@ tclModule ["load",topname] = do
                             ": it is a primitive module")
   -- getABIHierarchy calls GenABin.readABinFile to read a .ba file
   (topmodId, hierMap, instModMap, ffuncMap, _, foreign_mods, abmis_by_name)
-      <- convErrorTToIO globalErrHandle $
+      <- convExceptTToIO globalErrHandle $
          getABIHierarchy globalErrHandle
                          (verbose flags) (ifcPath flags) (Just gen_backend)
                          prim_names topname []
@@ -2086,7 +2113,8 @@ getBInstChildren b@(BNode {binst_sub = sub}) =
               --
               mkChildIN :: (String, ABinEitherModInfo) -> Bool -> InstNode -> IO [BInst]
               mkChildIN _ _ inodep | isSynthP hide inodep =
-                do let (Just unique) = getSynthName hide inodep
+                do let unique = fromJustOrErr "bluetcl.mkChildIN: unique" $
+                                  getSynthName hide inodep
                    mminfo <- findModuleByInstance (reverse $ (getIdBaseString $ unique) : binst_synth b)
                    let b_add = addInst b (Just  (getIdBaseString $ unique))
                                  (getIdBaseString $ node_name inodep)
@@ -3283,13 +3311,13 @@ data IfcField =
 
 getIfcHierarchy :: Maybe Id -> [(Id, RawIfcField)] -> Type -> IO [IfcField]
 getIfcHierarchy instId raw_fields tifc = do
-    mres <- runErrorT (mgetIfcHierarchy instId raw_fields tifc)
+    mres <- runExceptT (mgetIfcHierarchy instId raw_fields tifc)
     case mres of
       Right res -> return res
       Left msg  -> internalError msg
 
 mgetIfcHierarchy :: Maybe Id -> [(Id, RawIfcField)] -> Type ->
-                    ErrorT String IO [IfcField]
+                    ExceptT String IO [IfcField]
 mgetIfcHierarchy instId raw_fields tifc = do
     -- use "expandSyn" to avoid getting back "Alias" as the type analysis
     maifc <- lift $ getTypeAnalysis' (expandSyn tifc) True
@@ -3299,7 +3327,7 @@ mgetIfcHierarchy instId raw_fields tifc = do
             ifc_map = M.fromList raw_fields
 
             -- get the AIF for a flattened name
-            lookupAIF :: Id -> ErrorT String IO RawIfcField
+            lookupAIF :: Id -> ExceptT String IO RawIfcField
             lookupAIF i =
                 case (M.lookup i ifc_map) of
                   Just aif -> return aif
@@ -3320,10 +3348,10 @@ mgetIfcHierarchy instId raw_fields tifc = do
 
             -- get the IfcField for one field
             getField :: Id -> (Bool, Id, Qual Type, [IfcPragma]) ->
-                        ErrorT String IO IfcField
+                        ExceptT String IO IfcField
             getField prefix (_, fId, (_ :=> t), _) = getField' prefix fId t
 
-            getField' :: Id -> Id -> Type -> ErrorT String IO IfcField
+            getField' :: Id -> Id -> Type -> ExceptT String IO IfcField
             getField' prefix fId t = do
                 -- Function for expanding Vectors of subinterfaces
                 -- (or pseudo-interfaces like Clock, Reset, Inout)
@@ -3528,7 +3556,7 @@ getSubmodPortInfo mtifc avi = do
       let defl_ifc_hier = [ (Field fId inf Nothing) | (fId, inf) <- ifc_map ]
       in case mtifc of
            Just tifc -> do
-              mres <- runErrorT $
+              mres <- runExceptT $
                       mgetIfcHierarchy (Just (avi_vname avi)) ifc_map tifc
               case mres of
                 Right res -> return res

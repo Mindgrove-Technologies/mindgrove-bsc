@@ -60,7 +60,8 @@ import qualified Data.Set as S
 import IntLit
 import IntegerUtil(aaaa)
 import PPrint hiding (char, int)
-import Util(itos, headOrErr, initOrErr, lastOrErr, snd3, makePairs, concatMapM)
+import Util(itos, headOrErr, initOrErr, lastOrErr, unconsOrErr,
+            snd3, makePairs, concatMapM)
 import Eval(Hyper(..))
 import ErrorUtil(internalError)
 
@@ -68,7 +69,8 @@ import Data.Maybe
 import Data.List(partition, intersperse, intercalate, nub, sortBy)
 import Data.List.Split(wordsBy)
 import Numeric(showHex)
-import Control.Monad.State(State, gets, modify, when)
+import Control.Monad(when)
+import Control.Monad.State(State, gets, modify)
 import Data.Char(toLower)
 import qualified Data.Map as Map
 
@@ -386,7 +388,8 @@ aPortIdToC :: AId -> CCExpr
 aPortIdToC id =
     let (qs, v) = adjustInstQuals id
         v' = pfxPort ++ v
-        (p:ps) = qs ++ [v']
+        (p, ps) = unconsOrErr "SimCCBlock.aPortIdToC" $
+                    qs ++ [v']
     in  foldl cDot (var p) ps
 
 aUnqualPortIdToString :: AId -> String
@@ -401,7 +404,8 @@ aParamIdToC :: AId -> CCExpr
 aParamIdToC id =
     let (qs, v) = adjustInstQuals id
         v' = pfxParam ++ v
-        (p:ps) = qs ++ [v']
+        (p, ps) = unconsOrErr "SimCCBlock.aParamIdToC" $
+                    qs ++ [v']
     in  foldl cDot (var p) ps
 
 -- convert an AId for a param into a CCFragment with full path qualification
@@ -413,7 +417,8 @@ aDefIdToC :: AId -> CCExpr
 aDefIdToC id =
     let (qs, v) = adjustInstQuals id
         v' = pfxDef ++ v
-        (p:ps) = qs ++ [v']
+        (p, ps) = unconsOrErr "SimCCBlock.aDefIdToC" $
+                    qs ++ [v']
     in  foldl cDot (var p) ps
 
 aUnqualDefIdToString :: AId -> String
@@ -434,7 +439,8 @@ aInstMethIdToC instId methId =
 aInstIdToC :: AId -> CCExpr
 aInstIdToC id =
     let (qs, v) = adjustInstQuals id
-        (p:ps)  = qs ++ (if (null v) then [] else [pfxInst ++ v])
+        (p, ps) = unconsOrErr "SimCCBlock.aInstIdToC" $
+                    qs ++ (if (null v) then [] else [pfxInst ++ v])
     in  foldl cDot (var p) ps
 
 aUnqualInstIdToString :: AId -> String
@@ -464,7 +470,8 @@ aRuleIdToC id =
     let (qs, v) = adjustInstQuals id
         -- rule names need no additional prefix
         v' = v
-        (p:ps) = qs ++ [v']
+        (p, ps) = unconsOrErr "SimCCBlock.aRuleIdToC" $
+                    qs ++ [v']
     in  foldl cDot (var p) ps
 
 -- convert the unique Int for a clock gate into a CCFragment referencing

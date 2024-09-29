@@ -11,7 +11,8 @@ import Prelude hiding ((<>))
 
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Monad.State
+import Control.Monad(foldM)
+import Control.Monad.State(State, runState, gets, get, put)
 import Data.Maybe(mapMaybe)
 import Data.Char(toLower)
 import Data.List(intersperse, groupBy)
@@ -369,8 +370,9 @@ ppFieldDef d (i, e) = pPrint d 0 i <+> text ":=" <+> pPrint d 0 e
 ppVarDecls :: PDetail -> [(SId, SType)] -> Doc
 ppVarDecls d [] = internalError ("SAL.ppVarDecls empty")
 ppVarDecls d as =
-    let as' = map (\ its@((_,t):_) -> (map fst its, t)) $
-              groupBy eqSnd as
+    let as' = let getInfo its@((_,t):_) = (map fst its, t)
+                  getInfo _ = internalError "SAL.ppVarDecls getInfo"
+              in  map getInfo (groupBy eqSnd as)
         ppArg (is, t) =
             commaSep (map (pPrint d 0) is) <+> colon <+> pPrint d 0 t
     in  lparen <> commaSep (map ppArg as') <> rparen
