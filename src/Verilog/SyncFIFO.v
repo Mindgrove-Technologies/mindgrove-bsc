@@ -100,11 +100,11 @@ module SyncFIFO(
    assign                    dDeqPtrIndx  = dGDeqPtr[indxWidth-1:0];
 
    // Fifo memory write
-   always @(posedge sCLK)
-     begin
-        if ( sENQ )
-          fifoMem[sEnqPtrIndx] <= `BSV_ASSIGNMENT_DELAY sD_IN ;
-     end // always @ (posedge sCLK)
+   // always @(posedge sCLK)
+   //   begin
+   //      if ( sENQ )
+   //        fifoMem[sEnqPtrIndx] <= `BSV_ASSIGNMENT_DELAY sD_IN ;
+   //   end // always @ (posedge sCLK)
 
    ////////////////////////////////////////////////////////////////////////
    // Enqueue Pointer and increment logic
@@ -115,6 +115,7 @@ module SyncFIFO(
      begin
         if (sRST == `BSV_RESET_VALUE)
           begin
+             fifoMem[sEnqPtrIndx] <= `BSV_ASSIGNMENT_DELAY {dataWidth {1'b0}} ;
              sGEnqPtr    <= `BSV_ASSIGNMENT_DELAY {(indxWidth +2 ) {1'b0}} ;
              sGEnqPtr1   <= `BSV_ASSIGNMENT_DELAY { {indxWidth {1'b0}}, 2'b11} ;
              sNotFullReg <= `BSV_ASSIGNMENT_DELAY 1'b0 ; // Mark as full during reset to avoid spurious loads
@@ -123,6 +124,7 @@ module SyncFIFO(
            begin
               if ( sENQ )
                 begin
+                   fifoMem[sEnqPtrIndx] <= `BSV_ASSIGNMENT_DELAY sD_IN ;
                    sGEnqPtr1   <= `BSV_ASSIGNMENT_DELAY incrGrayP( sGEnqPtr1 ) ;
                    sGEnqPtr    <= `BSV_ASSIGNMENT_DELAY sGEnqPtr1 ;
                    sNotFullReg <= `BSV_ASSIGNMENT_DELAY sFutureNotFull ;
