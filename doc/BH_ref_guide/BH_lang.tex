@@ -117,13 +117,10 @@
 \newcommand{\BSInc}{Bluespec, Inc.}
 
 \newcommand{\BH}{BH}
-\newcommand\BHfull{Bluespec Haskell/Classic}
+\newcommand{\BHFull}{Bluespec Haskell/Classic}
 
-\newcommand{\blue}{Bluespec SystemVerilog}
 \newcommand{\BSVFull}{Bluespec SystemVerilog}
 \newcommand{\BSV}{BSV}
-\newcommand{\BSVVersion}{3.8}
-\newcommand{\BSVvN}{BSV 3.8}
 
 \newcommand{\bsc}{\emph{bsc}}
 
@@ -377,7 +374,7 @@ Bluespec is a trademark of Bluespec, Inc.
 
 \section{Introduction}
 
-{\BH} ({\BHfull}) is a language for hardware design.  The language borrows its
+{\BH} ({\BHFull}) is a language for hardware design.  The language borrows its
 notation, type and package system from an existing general-purpose
 functional programming language called Haskell
 {\cite{haskell12}}{\index{Haskell}} where those constructs have been
@@ -664,6 +661,18 @@ whole represents bit vectors of length 16 bits.  Similarly the type
 \end{verbatim}
 represents the type of unsigned integers that can be represented in 32
 bits.
+These numeric types are said to have kind \texttt{\#},
+rather than kind \texttt{*} for value types.
+
+\index{string types}
+Strings can also be used as type, having kind \texttt{\$}.
+This is less common, but string types are quite useful in the generics library,
+described in the \LibRefGuide.
+Examples:
+\begin{verbatim}
+ MetaData#("Prelude","Maybe",PrimUnit,2)
+ MetaConsNamed#("Valid",1,1)
+\end{verbatim}
 
 % ----------------------------------------------------------------
 
@@ -1008,25 +1017,22 @@ a field called {\te{target}} containing a value of type {\te{UInt26}}.
 Error messages involving data type definitions sometimes show traces
 of how they are handled internally.  Data type definitions are
 translated into a data type where each constructor has exactly one
-argument.  Each argument is a struct type.  The types above translate
+argument.  The types above translate
 to:
 \begin{verbatim}
  data Bool = False PrimUnit | True PrimUnit
 
- data Operand = Register Operand.Register
-              | Operand.Literal
-              | Operand.Indexed
- struct Operand°Register = { _1 :: Bit 5 }
- struct Operand°Literal = { _1 :: Bit 22 }
- struct Operand°Indexed = { _1 :: Reg 5; _2 :: Reg 5 }
+ data Operand = Register (Bit 5)
+              | Literal (Bit 22)
+              | Indexed Operand_$Indexed
+ struct Operand_$Indexed = { _1 :: Reg 5; _2 :: Reg 5 }
 
- data Maybe a = Nothing PrimUnit | Maybe.Just a
- struct Maybe.Just a = { _1 :: a }
+ data Maybe a = Nothing PrimUnit | Just a
 
- data Instruction = Immediate Instruction°Immediate |
-                    Register Instruction°Register
- struct Instruction°Immediate = { op::Op; rs::Reg; rt::CPUReg; imm::UInt16; }
- struct Instruction°Register = { op::Op; target::UInt26; }
+ data Instruction = Immediate Instruction_$Immediate
+                  | Register Instruction_$Register
+ struct Instruction_$Immediate = { op::Op; rs::Reg; rt::CPUReg; imm::UInt16; }
+ struct Instruction_$Register = { op::Op; target::UInt26; }
 \end{verbatim}
 \end{NOTE}
 
@@ -2720,6 +2726,15 @@ the addition relation, and that {\te{logWPlusOne}} has Integer type.
 The second line binds {\te{logWPlusOne}} to the integer value
 corresponding to {\te{n}}.
 
+{\index{stringOf@\te{stringOf} (``function'' of string types)}}
+A ``function'' {\te{stringOf}} is also available to get the string value
+of a type-level string.
+\begin{verbatim}
+ type MyString = "Hello, world!"
+ x :: String
+ x = stringOf MyString  -- x will have the value "Hello, world!"
+\end{verbatim}
+
 % ----------------------------------------------------------------
 
 \subsection{The type \te{Bit}}
@@ -3040,7 +3055,7 @@ once the compiler will assume that the methods in which the names occur
 share a port and it will insert a multiplexer accordingly.
 
 Following a port name there can be port a property,
-whic is one of the following:
+which is one of the following:
 \begindescrlist{xxxxxxx}
 \litem{\te{reg}}
 specifies that the port is directly connected

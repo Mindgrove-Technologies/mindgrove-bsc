@@ -12,7 +12,8 @@ import Flags(Flags, keepAddSize, removePrimModules, useNegate, readableMux)
 import Id
 import PreIds(idUnsigned)
 import FStringCompat(mkFString)
-import Control.Monad.State
+import Control.Monad(when)
+import Control.Monad.State(State, evalState, gets, get, put)
 import qualified Data.Map as M
 import Prim
 import Pragma(defPropsHasNoCSE)
@@ -175,7 +176,10 @@ aQExp :: Bool -> AExpr -> QQState AExpr
 -- non-constant bit extraction turns into shift and mask
 aQExp top (APrim aid t@(ATBit n) PrimExtract [e, h, l])
                 | h /= l && not (isConst h && isConst l) =
-    let te@(ATBit m) = aType e
+    let te = aType e
+        m = case te of
+              (ATBit sz) -> sz
+              _ -> internalError "AVeriQuirks.aQExp PrimExtract: unexpected expr type"
         ht = aType h
         -- (e & ~(('1 << 1) << h))
         e1 = APrim aid te PrimAnd [e, mask]

@@ -12,7 +12,6 @@ import Data.List(transpose, sortBy, partition,
             unzip4, groupBy, intersect,
             genericLength)
 
-import ListUtil(mapFst)
 import Util
 import FStringCompat
 import IntLit
@@ -917,7 +916,10 @@ mkBlob mMap omMultMap (method@(MethodId obj met), usedPorts) =
 
       -- The list of converted uses per port
       -- (This intermediate step is exposed to make "u" available to "uExp".)
-      uses@(((u, _):_):_) = map (map cvt) portUses
+      uses = map (map cvt) portUses
+      u = case uses of
+            (((uu, _):_):_) -> uu
+            _ -> internalError "AState.mkBlob: u"
 
       -- Complete the conversion to make a list of MethPortBlob
       meth_port_blobs :: [MethPortBlob]

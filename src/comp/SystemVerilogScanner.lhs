@@ -310,13 +310,21 @@ line Pos directive. Emitted by the preprocessor
 
 One day the gods will smite me for this.
 
+> -- XXX Errors should be better handled (GitHub issue #584)
 > scanLinePosDirective ::Position -> Scanner
 > scanLinePosDirective ipos state@(ScannerState (pos,input)) =
->     let (directive, _:restOfInput) = span (/= ')') input
+>     let (directive, mParenAndRestOfInput) = span (/= ')') input
+>         restOfInput = case mParenAndRestOfInput of
+>                         (')':rest) -> rest
+>                         _ -> internalError "scanLinePosDirective: missing close paren"
 >         list = Data.List.groupBy (\x -> \y -> (x /= ',') && (y /= ',')) directive
 >         param_list = map (filter (\x -> (not (isWhitespace x))))
 >                          (filter ( /= ",") list)
->         (f:l:c:_ {-level-}:_) = param_list
+>         -- Expect four arguments (file, line, column, and level)
+>         -- but only use the first three
+>         (f, l, c) = case param_list of
+>                       (a1:a2:a3:_:_) -> (a1, a2, a3)
+>                       _ -> internalError "scanLinePosDirective: too few arguments"
 >      in
 >        scanMain (ScannerState (updatePosFileLineCol pos (mkFString f)
 >                                (read l) (read c), restOfInput))
@@ -396,19 +404,18 @@ Is a character whitespace? (SV 3.1a LRM A.9.4)
 > isHorizontalWhitespace ' ' = True; isHorizontalWhitespace '\t' = True
 > isHorizontalWhitespace _ = False
 
-Does a character start a valid identifier? (SV 3.1a LRM A.9.3)
+Does a character start a valid identifier?
 
 > isIdStart :: Char -> Bool
 > isIdStart '_' = True -- might be faster as a full table
-> isIdStart c   = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+> isIdStart c   = isLetter c
 
-Does a character continue a valid identifier? (SV 3.1a LRM A.9.3)
+Does a character continue a valid identifier?
 
 > isIdChar :: Char -> Bool
 > isIdChar '_' = True -- might be faster as a full table
 > isIdChar '$' = True
-> isIdChar c   = ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
->                 || (c >= '0' && c <= '9'))
+> isIdChar c   = isLetter c || isDigit c
 
 Is a character part of a valid operator?
 

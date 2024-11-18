@@ -39,8 +39,8 @@ module Error(
              -- exit with the same code as a system call that failed
              exitFailWith,
 
-             -- report errors in ErrorT [EMsg] IO
-             convErrorTToIO,
+             -- report errors in ExceptT [EMsg] IO
+             convExceptTToIO,
 
              -- used for displaying messages as a string
              -- (in .ba file, in Verilog dynamic error, in Tcl)
@@ -70,8 +70,8 @@ import Data.List(genericLength)
 import qualified Data.Set as S
 import System.IO(Handle, hClose, hPutStr, stderr)
 import System.Exit(exitWith, ExitCode(..))
-import ErrorTCompat
 import Control.Monad(when)
+import Control.Monad.Except(ExceptT, runExceptT)
 import qualified Control.Exception as CE
 import Data.IORef
 import System.IO.Unsafe(unsafePerformIO)
@@ -413,15 +413,15 @@ exitOK ref = do
 
 -- -------------------------
 
--- We can't use [EMsg] with ErrorT because it leads to overlapping
+-- We can't use [EMsg] with ExceptT because it leads to overlapping
 -- instance problems. Instead, we will wrap it with a newtype.
 newtype EMsgs = EMsgs { errmsgs :: [EMsg] }
 
 -- -------------------------
 
-convErrorTToIO :: ErrorHandle -> ErrorT EMsgs IO a -> IO a
-convErrorTToIO ref fn =
-    do mres <- runErrorT fn
+convExceptTToIO :: ErrorHandle -> ExceptT EMsgs IO a -> IO a
+convExceptTToIO ref fn =
+    do mres <- runExceptT fn
        case mres of
          Left msgs -> bsError ref (errmsgs msgs)
          Right res -> return res
@@ -680,6 +680,7 @@ data ErrMsg =
         | ESVPNoImportDelimiter
         | ESVPNoClosingParen String
         | ESVPNoId String
+        | ENotUTF8
 
         -- Type checker and static elaboration errors
 
@@ -1118,6 +1119,7 @@ data ErrMsg =
         | EMissingUserFile String [String]
         | EUnrecognizedCmdLineText String
         | EUnknownVerilogSim String [String] Bool
+        | EMissingVPIWrapperFile String Bool
 
         -- ABin (.ba) file issues
         | WExtraABinFiles [String]
@@ -1870,6 +1872,8 @@ getErrorText (ESVPNoId kw) =
 getErrorText (WUnusedDef i) =
     (Parse 223, empty,
      s2par ("Definition of " ++ quote i ++ " is not used."))
+getErrorText ENotUTF8 =
+    (Parse 224, empty, s2par "File encoding is not UTF-8")
 
 -- Type check and elaboration errors
 
@@ -2532,10 +2536,13 @@ getErrorText (EMethodArgNameMismatch meth mismatches) =
 
 getErrorText (EActionSelfSB methods) =
     (Type 94, empty,
-     if (length methods == 1)
-        then s2par ("An Action or ActionValue method cannot be SB with itself (it must be SBR, CF or C).  The SB annotation for " ++ quote (head methods) ++ " is not allowed.")
-        else s2par ("An Action or ActionValue method cannot be SB with itself (it must be SBR, CF or C).  The SB annotation is illegal for these methods:") $$
-             nest 2 (vcat (map text methods)))
+     let intro = "An Action or ActionValue method cannot be SB with itself " ++
+                 "(it must be SBR, CF or C)."
+     in case methods of
+          [m] -> s2par (intro ++ "  The SB annotation for " ++ quote m ++ " is not allowed.")
+          _   -> s2par (intro ++ "  The SB annotation is illegal for these methods:") $$
+                 nest 2 (vcat (map text methods))
+    )
 
 getErrorText (ECtxRedNotUpdateable t positions) =
     (Type 95, empty,
@@ -4415,6 +4422,12 @@ getErrorText (WNonDemotableErrors tags) =
      let s = if (length tags == 1) then "" else "s"
      in  s2par ("Cannot demote the following error" ++ s ++ ":") $$
          nest 2 (sepList (map text tags) comma))
+
+getErrorText (EMissingVPIWrapperFile fname is_dpi) =
+    (System 95, empty,
+     let ifctype = if is_dpi then "DPI" else "VPI"
+     in  s2par ("Cannot find the " ++ ifctype ++ " file " ++ ishow fname ++
+                " in the Verilog search path."))
 
 -- Runtime errors
 getErrorText (EMutuallyExclusiveRulesFire r1 r2) =

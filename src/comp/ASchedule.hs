@@ -19,8 +19,9 @@ import Prelude hiding ((<>))
 
 import Data.List
 import Data.Maybe
-import ErrorTCompat
-import Control.Monad.State
+import Control.Monad(when, foldM)
+import Control.Monad.Except(ExceptT, runExceptT, throwError)
+import Control.Monad.State(StateT, runStateT, lift, get, put)
 import System.IO.Unsafe
 import Debug.Trace(traceM)
 import qualified Data.Map as M
@@ -35,7 +36,6 @@ import ASyntaxUtil
 import Backend
 import Pragma
 import Util
-import ListUtil(mapFst)
 import Eval
 import Version(bscVersionStr)
 import Error(internalError, EMsg, WMsg, EMsgs(..), ErrMsg(..),
@@ -43,7 +43,7 @@ import Error(internalError, EMsg, WMsg, EMsgs(..), ErrMsg(..),
              showErrorList, showWarningList, getErrMsgTag)
 import ErrorMonad(ErrorMonad(..))
 import PFPrint
-import PPrint(vsep)
+import PPrint(vsep, commaSep)
 import SCC(scc,tsort)
 import Id(Id, emptyId, getIdString, getIdBaseString, getIdPosition,
           isRdyId, addToBase, mk_homeless_id, mkIdWillFire, addSuffix)
@@ -354,7 +354,7 @@ csGraphToSchedGraph edges =
 -- In order to record the warnings during scheduling, we operate on a
 -- state monad which stores the EMsgs.
 
-type SM = ErrorT EMsgs (StateT SState IO)
+type SM = ExceptT EMsgs (StateT SState IO)
 
 data SState = SState {
                 sm_warnings             :: [EMsg],
@@ -425,7 +425,7 @@ aSchedule :: ErrorHandle -> Flags ->
              IO (Either AScheduleErrInfo (AScheduleInfo, APackage))
 aSchedule errh flags prefix urgency_pairs pps amod = do
     let f = aSchedule' errh flags prefix urgency_pairs pps amod
-    (result, s) <- runStateT (runErrorT f) initSState
+    (result, s) <- runStateT (runExceptT f) initSState
     let
         processWarning e@(pos,msg) =
             (pos, getErrMsgTag msg, showWarningList [e])
@@ -721,66 +721,6 @@ aSchedule_step1 errh flags prefix pps amod = do
   when trace_sched_steps $ traceM "disjoint2"
 
   -- ====================
-
-  -- ActionValue methods with arguments should be considered to
-  -- conflict with themselves if the return value uses an argument
-
-  let avmeth_arg_usemap =
-          let -- define this map recursively
-              port_usemap = M.fromList (map findUses ds)
-              ds = apkg_local_defs amod
-              findUses (ADef di _ de _) =
-                  let accumFn (ASPort _ i) pmap = S.insert i pmap
-                      accumFn (ASDef _ i) pmap =
-                          -- recursive construction
-                          case (M.lookup i port_usemap) of
-                            Nothing -> internalError ("port_usemap: "
-                                                      ++ ppReadable i)
-                            Just m -> S.union m pmap
-                      accumFn _ pmap = pmap
-                  in  (di, exprFold accumFn S.empty de)
-          in
-              -- now use it find the uses just for avmethod args
-              [ (di, S.intersection argset portset)
-                    | (AIActionValue { aif_value = d,
-                                       aif_inputs = as }) <- ifs,
-                      let argset = S.fromList (map fst as),
-                      let (di, portset) = findUses d ]
-
-  let
-      -- XXX create new conflict types for these?
-      cfConflictEdgesAVArg =
-          tr "let cfConflictEdgesAVArg" $
-          [ (mid, mid, [CUse uses])
-                | (mid, arg_uses) <- avmeth_arg_usemap,
-                  not (S.null arg_uses),
-                  let mkUse a = (MethodId emptyId a, MethodId emptyId a),
-                  let uses = map mkUse (S.toList arg_uses) ]
-      scConflictEdgesAVArg =
-          tr "let scConflictEdgesAVArg" $
-          -- these are the same edges
-          cfConflictEdgesAVArg
-      pcConflictEdgesAVArg =
-          tr "let pcConflictEdgesAVArg" $
-          -- these are the same edges
-          cfConflictEdgesAVArg
-
-  -- ====================
-
-  -- conflicts introduced by schedPragmas (preempt and any user overrides)
-  -- XXX this could probably be done better
-  let
-      -- for the cf map (edges need to be both directions)
-      cfConflictEdgesSP = tr "let cfConflictEdgesSP" $
-          extractCFConflictEdgesSP schedPragmas
-      -- for the pc map
-      pcConflictEdgesSP = tr "let pcConflictEdgesSP" $
-          extractPCConflictEdgesSP schedPragmas
-      -- for the sc map
-      scConflictEdgesSP = tr "let scConflictEdgesSP" $
-          extractSCConflictEdgesSP schedPragmas
-
-  -- ====================
   -- CF conflict graph
 
       -- Build an initial conflict graph for methods and rules
@@ -793,20 +733,9 @@ aSchedule_step1 errh flags prefix pps amod = do
       mkConflictMap flags disjointState2
                     ruleMethodUseMap ncSetCF cf_or_disjoint
 
-  let
-      -- Add conflicts for ActionValue method argument uses
-      -- XXX should this be part of cfConflictMap0?
-      cfConflictMap1 = tr "let cfConflictMap1" $
-          foldl addConflictEdge cfConflictMap0 cfConflictEdgesAVArg
-
-      -- Now add conflicts implied by the sched pragmas
-      -- XXX this also includes the unsupported user override pragma
-      cfConflictMap = tr "let cfConflictMap" $
-          foldl addConflictEdge cfConflictMap1 cfConflictEdgesSP
-
   -- for better memory performance, force the computation
-  hyper (G.toList cfConflictMap) $
-      when trace_sched_steps $ traceM ("forcing cfConflictMap")
+  hyper (G.toList cfConflictMap0) $
+      when trace_sched_steps $ traceM ("forcing cfConflictMap0")
 
   -- ====================
   -- PC conflict graph
@@ -823,20 +752,9 @@ aSchedule_step1 errh flags prefix pps amod = do
       mkConflictMap flags disjointState3
                     ruleMethodUseMap ncSetPC cf_map_test
 
-  let
-      -- Add conflicts for ActionValue method argument uses
-      -- XXX should this be part of scConflictMap0?
-      pcConflictMap1 = tr "let pcConflictMap1" $
-          foldl addConflictEdge pcConflictMap0 pcConflictEdgesAVArg
-
-      -- Now add conflicts implied by the sched pragmas
-      -- XXX this also includes the unsupported user override pragma
-      pcConflictMap = tr "let pcConflictMap" $
-          foldl addConflictEdge pcConflictMap1 pcConflictEdgesSP
-
   -- for better memory performance, force the computation
-  hyper (G.toList pcConflictMap) $
-      when trace_sched_steps $ traceM ("forcing pcConflictMap")
+  hyper (G.toList pcConflictMap0) $
+      when trace_sched_steps $ traceM ("forcing pcConflictMap0")
 
   -- ====================
   -- SC conflict graph
@@ -847,6 +765,8 @@ aSchedule_step1 errh flags prefix pps amod = do
       -- A conflict test is a function from two rule ids to a list
       -- of method pairs between the rules which have the conflict.
 
+      -- (r1,r2) in scConflictMap  <==>  r1 affects something that r2 reads
+
       -- convert the pc map into a test (XXX why pc?! why not cf?)
       pc_map_test r1 r2 = isNothing $ G.lookup (r1, r2) pcConflictMap0
 
@@ -856,21 +776,83 @@ aSchedule_step1 errh flags prefix pps amod = do
       mkConflictMap flags disjointState4
                     ruleMethodUseMap ncSetSC pc_map_test
 
-  let
-      -- Add conflicts for ActionValue method argument uses
-      -- XXX should this be part of scConflictMap0?
-      scConflictMap1 = tr "let scConflictMap1" $
-          foldl addConflictEdge scConflictMap0 scConflictEdgesAVArg
+  -- for better memory performance, force the computation
+  hyper (G.toList scConflictMap0) $
+      when trace_sched_steps $ traceM ("forcing scConflictMap0")
 
-      -- Now add conflicts implied by the sched pragmas
-      -- XXX this also includes the unsupported user override feature
+  -- ====================
+
+  -- An Action or ActionValue method should be considered to conflict
+  -- with itself if it has an argument that is used in the return value
+  -- or in the condition of any of the actions.
+
+  let
+      -- XXX create new conflict types for these?
+      cfConflictEdgesMethodArg =
+          tr "let cfConflictEdgesMethodArg" $
+          let ds = apkg_local_defs amod
+          in  extractMethodArgEdges scConflictMap0 ds ifs
+      scConflictEdgesMethodArg =
+          tr "let scConflictEdgesMethodArg" $
+          -- these are the same edges
+          cfConflictEdgesMethodArg
+      pcConflictEdgesMethodArg =
+          tr "let pcConflictEdgesMethodArg" $
+          -- these are the same edges
+          cfConflictEdgesMethodArg
+
+  -- Now add the edges to the maps
+  let
+      cfConflictMap1 = tr "let cfConflictMap1" $
+          foldl addConflictEdge cfConflictMap0 cfConflictEdgesMethodArg
+
+      pcConflictMap1 = tr "let pcConflictMap1" $
+          foldl addConflictEdge pcConflictMap0 pcConflictEdgesMethodArg
+
+      scConflictMap1 = tr "let scConflictMap1" $
+          foldl addConflictEdge scConflictMap0 scConflictEdgesMethodArg
+
+  -- ====================
+
+  -- conflicts introduced by schedPragmas (preempt and any user overrides)
+  -- XXX this could probably be done better
+  let
+      -- for the cf map (edges need to be both directions)
+      cfConflictEdgesSP = tr "let cfConflictEdgesSP" $
+          extractCFConflictEdgesSP schedPragmas
+      -- for the pc map
+      pcConflictEdgesSP = tr "let pcConflictEdgesSP" $
+          extractPCConflictEdgesSP schedPragmas
+      -- for the sc map
+      scConflictEdgesSP = tr "let scConflictEdgesSP" $
+          extractSCConflictEdgesSP schedPragmas
+
+  -- Now add the edges to the maps
+  let
+      cfConflictMap = tr "let cfConflictMap" $
+          foldl addConflictEdge cfConflictMap1 cfConflictEdgesSP
+
+      pcConflictMap = tr "let pcConflictMap" $
+          foldl addConflictEdge pcConflictMap1 pcConflictEdgesSP
+
       -- (r1,r2) in scConflictMap  <==>  r1 affects something that r2 reads
       scConflictMap = tr "let scConflictMap" $
           foldl addConflictEdge scConflictMap1 scConflictEdgesSP
 
-  -- for better memory performance, force the computation
+  -- ====================
+  -- For better memory performance, force the computation
+
+  -- XXX Do we need this again, if we already forced the initial maps?
+{-
+  hyper (G.toList cfConflictMap) $
+      when trace_sched_steps $ traceM ("forcing cfConflictMap")
+
+  hyper (G.toList pcConflictMap) $
+      when trace_sched_steps $ traceM ("forcing pcConflictMap")
+
   hyper (G.toList scConflictMap) $
       when trace_sched_steps $ traceM ("forcing scConflictMap")
+-}
 
   -- ====================
   -- Rule Relation DB (1 of 4)
@@ -2699,6 +2681,83 @@ errReflexiveUserUrgency es =
 
 
 -- ========================================================================
+-- Compute conflict edges for action methods with themselves
+-- when use of an argument (in conditions or return values)
+-- limits the method to conflict with itself (not be SC)
+
+extractMethodArgEdges :: ConflictMap -> [ADef] -> [AIFace] ->
+                         [(ARuleId,ARuleId,[Conflicts])]
+extractMethodArgEdges scConflictMap0 ds ifs =
+  let
+      -- Construct (lazily and recursively) a map from each def to the
+      -- set of module ports that it uses.
+      port_usemap = M.fromList (map findDefPortUses ds)
+
+      findExprPortUses e =
+          let accumFn (ASPort _ i) pmap = S.insert i pmap
+              accumFn (ASDef _ i) pmap =
+                  -- recursive construction
+                  case (M.lookup i port_usemap) of
+                    Nothing -> internalError ("port_usemap: " ++ ppReadable i)
+                    Just m -> S.union m pmap
+              accumFn _ pmap = pmap
+          in  exprFold accumFn S.empty e
+
+      findDefPortUses (ADef di _ de _) = (di, findExprPortUses de)
+
+      -- ActionValue methods with arguments should be considered to
+      -- conflict with themselves if the return value uses an argument
+      --
+      findAVValueUses :: ADef -> S.Set AId
+      findAVValueUses = snd . findDefPortUses
+
+      -- Action/ActionValue methods with arguments should be considered
+      -- to conflict with themselves if any action call condition uses
+      -- an argument
+      --
+      findACondUses :: [ARule] -> S.Set AId
+      findACondUses rs =
+          let getCond = headOrErr "findACondUses: getCond"
+              findActionPortUses :: AAction -> S.Set AId
+              findActionPortUses = findExprPortUses . getCond . aact_args
+              findRulePortUses :: ARule -> S.Set AId
+              findRulePortUses = S.unions . map findActionPortUses . arule_actions
+          in  S.unions $ map findRulePortUses rs
+
+      -- Given an interface field, determine if a conflict edge is needed
+      findAIFaceUses (AIActionValue { aif_name = mid,
+                                      aif_value = d,
+                                      aif_body = rs,
+                                      aif_inputs = as }) =
+          -- If the edge already exists, don't bother
+          if G.member (mid, mid) scConflictMap0
+          then S.empty
+          else let argset = S.fromList (map fst as)
+                   condset = findACondUses rs
+                   valset = findAVValueUses d
+               in  S.intersection argset (S.union condset valset)
+      findAIFaceUses (AIAction { aif_name = mid,
+                                 aif_body = rs,
+                                 aif_inputs = as }) =
+          -- If the edge already exists, don't bother
+          if G.member (mid, mid) scConflictMap0
+          then S.empty
+          else let argset = S.fromList (map fst as)
+                   condset = findACondUses rs
+               in  S.intersection argset condset
+      findAIFaceUses _ = S.empty
+
+  in
+     [ (mid, mid, [CUse uses])
+     | ifc <- ifs,
+       let mid = aif_name ifc,
+       let arg_uses = findAIFaceUses ifc,
+       not (S.null arg_uses),
+       let mkUse a = (MethodId emptyId a, MethodId emptyId a),
+       let uses = map mkUse (S.toList arg_uses) ]
+
+
+-- ========================================================================
 -- Disjoint testing
 --
 
@@ -3141,8 +3200,7 @@ makeRuleBetweenEdges ruleBetweenMap ruleMethodUseMap ruleNames sched_id_order =
                             pairs =
                               [ (m1, m2)
                                   | let m_methods2 = M.lookup inst r2_usemap,
-                                    isJust m_methods2,
-                                    let (Just methods2) = m_methods2,
+                                    (Just methods2) <- [m_methods2],
                                     (methId1, _) <- methods1,
                                     (methId2, _) <- methods2,
                                     methId1 /= methId2,
@@ -4276,11 +4334,8 @@ verifySafeRuleActions flags userDefs rulePCConflictUseMap dtstate = do
               | otherwise = (True, Just $ text "...")
           mkArgs es
               | null es   = (False, empty)
-              | show_all  = (False, ppeCommaSep es)
+              | show_all  = (False, commaSep (map ppe es))
               | otherwise = (True, text "...")
-          ppeCommaSep xs = let (y:ys) = reverse (map ppe xs)
-                               ys' = map (<> text ",") ys
-                           in  sep $ reverse (y:ys')
           -- (method, hasCond, args, moreInfo)
           getUseInfo :: UniqueUse -> (String, Maybe Doc, Doc, Bool)
           getUseInfo u@(UUExpr (AMethCall _ i m es) _) =
@@ -4419,7 +4474,7 @@ verifyStaticScheduleOneRule errh flags gen_backend
                                 let m2 = MethodId inst methId2,
                                 -- either direction is an error
                                 let m_rs = findBetween m1 m2,
-                                isJust m_rs, let Just rs = m_rs ]
+                                (Just rs) <- [m_rs] ]
            in  if (null badPairs)
                then Nothing
                else Just (rule, badPairs)
@@ -4526,8 +4581,7 @@ verifyStaticScheduleTwoRules errh flags gen_backend moduleId
                             pairs =
                               [ (m1, m2)
                                   | let m_methods2 = M.lookup inst r2_usemap,
-                                    isJust m_methods2,
-                                    let (Just methods2) = m_methods2,
+                                    (Just methods2) <- [m_methods2],
                                     (methId1, _) <- methods1,
                                     (methId2, _) <- methods2,
                                     methId1 /= methId2,
@@ -5200,8 +5254,7 @@ addAllMEAssumps pragmas rules =
 addMEAssumps :: [ASchedulePragma] -> ARule -> ARuleId -> [(ARule,(ARuleId,[ARuleId]))]
 addMEAssumps pragmas r@(ARule { arule_id = rid }) new_id = rs
   where me_pairs = extractMEPairsSP pragmas
-        getRule ids = l
-          where (l:_) = ids
+        getRule ids = headOrErr "addMEAssumps getRule" ids
         check_pairs :: [(ARuleId, [([ARuleId],[ARuleId])])]
         check_pairs = [ ((getRule (as ++ bs)), [(as, bs)]) | (as, bs) <- me_pairs ]
         check_map = M.fromListWith (++) check_pairs

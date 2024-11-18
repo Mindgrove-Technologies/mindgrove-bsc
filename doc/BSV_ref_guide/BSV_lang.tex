@@ -110,16 +110,16 @@
 \newcommand{\LibRefGuide}{\emph{Libraries Reference Guide}}
 \newcommand{\LibRefGuideFullName}{\emph{Bluespec Compiler (BSC) Libraries Reference Guide}}
 
+\newcommand{\BSCUserGuide}{\emph{BSC User Guide}}
+\newcommand{\BSCUserGuideFullName}{\emph{Bluespec Compiler (BSC) User Guide}}
+
 \newcommand{\BS}{Bluespec}
 \newcommand{\BSInc}{Bluespec, Inc.}
 
 \newcommand{\BH}{BH}
 
-\newcommand{\blue}{Bluespec SystemVerilog}
 \newcommand{\BSVFull}{Bluespec SystemVerilog}
 \newcommand{\BSV}{BSV}
-\newcommand{\BSVVersion}{3.8}
-\newcommand{\BSVvN}{BSV 3.8}
 
 \newcommand{\bsc}{\emph{bsc}}
 
@@ -264,7 +264,6 @@
 \resizebox{2in}{!}{\includegraphics[width=\textwidth]{../common/B-Lang}} \\
 \vspace{0.3in}
 {\BS}$^{\rm{TM}}$ {\SV} \\
-%Version {\BSVVersion} \\
 Language Reference Guide \\
 \vspace*{1in}
 \vspace*{1in}
@@ -1528,6 +1527,16 @@ The type \texttt{bit[$m$:0]} represents the type of bit vectors, with
 bits indexed from $m$ (msb/left) down through 0 (lsb/right), for $m
 \ge 0$.
 
+\index{string types}
+Type parameters can also be strings (known as \emph{string} types).
+These are not common, but are quite useful in the generics library,
+described in the \LibRefGuide.
+Examples:
+\begin{verbatim}
+ MetaData#("Prelude","Maybe",PrimUnit,2)
+ MetaConsNamed#("Valid",1,1)
+\end{verbatim}
+
 % ----------------------------------------------------------------
 
 \subsection{Polymorphism}
@@ -1718,6 +1727,22 @@ The pseudo-function \texttt{valueof}, which converts a numeric type to a
 value, should not be confused with the pseudo-function \texttt{SizeOf},
 described in Section {\ref{sec-sizeof}}, which converts a type to a
 numeric type.
+
+\subsubsection{The pseudo-function \te{stringof} (or \te{stringOf})}
+
+A function \texttt{stringof} (or \texttt{stringOf})
+\index{stringOf@\texttt{stringOf} (pseudo-function of string types)}
+similar to \te{valueof}
+exists to convert a string type to a string value.
+Example:
+\begin{verbatim}
+ instance CShow'#(Meta#(MetaConsNamed#(name, idx, nfields), a))
+  provisos (CShowSummand#(a));
+    function cshow'(tagged Meta {x});
+      return $format(stringOf(name), " {", cshowSummandNamed(x), "}");
+    endfunction
+ endinstance
+\end{verbatim}
 
 % ----------------------------------------------------------------
 
@@ -1919,7 +1944,7 @@ definition (Section \ref{sec-interface-definition}).
 
 \gram{typeFormals}{\term{\#} \term{(} \nterm{typeFormal} \many{ \term{,} \nterm{typeFormal}}\term{)} }}
 
-\gram{typeFormal}{\opt{\term{numeric}}  \term{type} \nterm{typeIde}}  
+\gram{typeFormal}{\opt{\term{numeric} {\alt} \term{string}} \term{type} \nterm{typeIde}}
 
 \gram{interfaceMemberDecl}{ \nterm{methodProto} {\alt} \nterm{subinterfaceDecl} }
 
@@ -3903,7 +3928,7 @@ new type and the original type can be used interchangeably anywhere.
 
 \gram{typeFormals}{\term{\#} \term{(} \nterm{typeFormal} \many{ \term{,} \nterm{typeFormal}}\term{)} }}
 
-\gram{typeFormal}{\opt{\term{numeric}}  \term{type} \nterm{typeIde}}  
+\gram{typeFormal}{\opt{\term{numeric} {\alt} \term{string}} \term{type} \nterm{typeIde}}
 
 
 % \gram{typeDefType}{\nterm{typeIde} \opt{\term{\#} \term{(}
@@ -3921,7 +3946,7 @@ Examples.  Defining names for polymorphic data types.
 \begin{verbatim}
  typedef Tuple3#(a, a, a) Triple#(type a);
 
- typdef Int#(n) MyInt#(type n);
+ typedef Int#(n) MyInt#(type n);
 \end{verbatim}
 The above example could also be written as:
 \begin{verbatim}
@@ -4138,7 +4163,7 @@ union.''
 
 \gram{typeFormals}{\term{\#} \term{(} \nterm{typeFormal} \many{ \term{,} \nterm{typeFormal}}\term{)} }}
 
-\gram{typeFormal}{\opt{\term{numeric}}  \term{type} \nterm{typeIde}}  
+\gram{typeFormal}{\opt{\term{numeric} {\alt} \term{string}} \term{type} \nterm{typeIde}}
 
 
 
@@ -4458,7 +4483,7 @@ A new class is declared using the following syntax:
 
 \gram{typeFormals}{\term{\#} \term{(} \nterm{typeFormal} \many{ \term{,} \nterm{typeFormal}}\term{)} }
 
-\gram{typeFormal}{\opt{\term{numeric}}  \term{type} \nterm{typeIde}}  
+\gram{typeFormal}{\opt{\term{numeric} {\alt} \term{string}} \term{type} \nterm{typeIde}}
 
 \gram{typedepends}          {\term{dependencies} \term{(}
                                              \nterm{typedepend} \many
@@ -7312,7 +7337,7 @@ conditional expressions, rule conditions, and method conditions.
 
 \gram{taggedUnionPattern}{ \term{tagged} \nterm{Identifier} \opt{ \nterm{pattern} } }
 
-\gram{structPattern}{ \term{tagged} \nterm{Identifier}
+\gram{structPattern}{ \nterm{Identifier}
                           \term{\{} 
                             \nterm{identifier} \term{:} \nterm{pattern}
                             \many{ \term{,}
@@ -7343,9 +7368,9 @@ by an identifier which is a union member name.  If that union member
 is not a \texttt{void} member, it must be followed by a pattern for that
 member.
 
-In a struct pattern, the \nterm{Identifier} following the
-{\term{tagged}} keyword is the type name of the struct as given in its
-typedef declaration.  Within the braces are listed, recursively, the
+A struct pattern consists of an identifier followed by braces, where
+the identifier is the type name of the struct as given in its typedef
+declaration.  Within the braces are listed, recursively, the
 member name and a pattern for each member of the struct.  The members
 can be listed in any order, and members can be omitted.
 
@@ -10008,7 +10033,7 @@ endmodule
 \end{verbatim}
 
 To enable rule splitting for an entire design, use the compiler
-flag \te{-split-if} at compile time.  See the user guide for
+flag \te{-split-if} at compile time.  See the {\BSCUserGuideFullName} for
 more information on compiler flags.  You can enable rule splitting for
 an entire design with the \te{-split-if} flag and then disable the
 effect for specific rules, by specifying the \te{nosplit} attribute
@@ -10171,7 +10196,7 @@ should have a gate supplied by the parent module.
 If an input clock is part of a vector of clocks, the gate port will be
 added to all clocks in the vector.  Example:
 \begin{verbatim}
-(* gate_input_clock = "clks, c2" *)
+(* gate_input_clocks = "clks, c2" *)
 module mkM(Vector#(2, Clock) clks, Clock c2);
 \end{verbatim}
 In this example, a gate port will be added to both the clocks in the
@@ -10975,7 +11000,7 @@ header.  Example:
 \end{verbatim}
 The designer can ensure that the signals will exist in the Verilog
 by using an appropriate compiler flag, the \te{-keep-fires} flag which
-is documented in the {\blue} User Guide.
+is documented in the {\BSCUserGuideFullName}.
 
 The \te{doc} attribute can be attached to any \te{rule..endrule} expression,
 such as inside a function or inside a for-loop.
