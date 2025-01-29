@@ -33,5 +33,6 @@ module MakeReset0 (
    output             OUT_RST ;
 
    assign OUT_RST = `BSV_RESET_VALUE ? ASSERT_IN : !ASSERT_IN;
+   assign ASSERT_OUT = `BSV_RESET_VALUE ? ASSERT_IN : !ASSERT_IN;
 
 endmodule // MakeReset0
