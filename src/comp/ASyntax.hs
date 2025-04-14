@@ -116,7 +116,6 @@ import Prelude hiding ((<>))
 #endif
 
 import Data.List(nub, intersect, (\\), partition)
--- import ListUtil(mapFst)
 -- import IntegerUtil(integerFormatPref)
 import Eval
 import PPrint
@@ -1600,10 +1599,8 @@ ppeString ds ec =
 
 instance (PPrintExpand a) => PPrintExpand [a] where
     pPrintExpand _ d _ [] = text "[]"
-    pPrintExpand m d _ xs = let (y:ys) = reverse (map (pPrintExpand m d defContext) xs)
-                                ys' = map (<> text ",") ys
-                                xs' = reverse (y:ys')
-                            in  text "[" <> sep xs' <> text "]"
+    pPrintExpand m d _ xs = let xs' = map (pPrintExpand m d defContext) xs
+                            in  text "[" <> commaSep xs' <> text "]"
 
 ppeAPackage :: Int -> PDetail -> APackage -> Doc
 ppeAPackage lim d apkg@(APackage { apkg_local_defs = ds }) =

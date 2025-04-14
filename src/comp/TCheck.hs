@@ -263,6 +263,9 @@ tiExpr as td exp@(CStruct mb c ies) = do
                         case (M.lookup f dflts_map) of
                           Just e -> (f,e)
                           Nothing -> (setIdPosition pos f, und)
+            -- Check for errors, such as duplicate fields or invalid fields
+            -- (see similar code in tiExpr of CStructUpd and tiPat of CPstruct)
+            --
             -- We will want to perform "is \\ qfs" to find fields
             -- mentioned by the user which are not in the type.
             -- Since "is" can be qualified (by GenWrap, at least),
@@ -312,15 +315,29 @@ tiExpr as td exp@(CStructUpd e ies@((i,_):_)) = do
         --posCheck "C" e
         x <- newVar (getPosition e) "tiExprCStructUpd"
         let v = CVar x
-            fs = map unQualId qfs
-            new = CStruct (Just True) ti (map mk fs)
-            mk i = case lookup i ies of
-                   Just e -> (i, e)
-                   Nothing -> (i, CSelectTT ti v i)
-            updids = map (unQualId . fst) ies
-        case findDup updids of
+            -- Desugar the struct-update into a struct-creation, where
+            -- any field not mentioned by the user is populated with
+            -- the value of that field in the original struct.
+            -- For fields mentioned by the user, use that Id (for its position).
+            -- For other fields, use the qualified field name, in case the
+            -- unqualified name isn't in scope.
+            new = CStruct (Just True) ti (map mk qfs)
+            mk qf = case find (qualEq qf . fst) ies of
+                      Just (i, e) -> (i, e)
+                      Nothing -> (qf, CSelectTT ti v qf)
+        -- Check for errors, such as duplicate fields or invalid fields
+        -- (see similar code in tiExpr of CStruct and tiPat of CPstruct)
+        -- A field name that appears both qualified and unqualified counts as a
+        -- duplicate.  Fields with the right base name but wrong qualifier
+        -- should be reported as invalid.
+        let updids = map fst ies
+        -- We could use something like "findDupBy qualEq updids" but that wouldn't
+        -- handle the case of "GoodQual.f" and "BadQual.f", which we want to report
+        -- early, particularly until we fix the disambiguation of the type to
+        -- consult more of the fields than just the first
+        case findDup (map unQualId updids) of
             i : _ -> err (getPosition i, EDupField (pfpString i))
-            [] -> case updids \\ fs of
+            [] -> case deleteFirstsBy qualEq updids qfs of
                    i : _ -> err (getPosition i, ENotField (pfpString ti) (pfpString i))
                    [] -> do
                             (qs, new') <- tiExpr ((x :>: toScheme td) : as) td new
@@ -817,7 +834,10 @@ tiExpr as td exp@(CmoduleVerilog name ui clks rsts args fields sch ps) = do
 --    tyM1 <- mapM (\ e -> newTVar "tiExpr CmoduleVerilog 4" KStar e) es
 --    tyM2 <- mapM (\ t -> newTVar "tiExpr CmoduleVerilog 5" KStar t) ts
     case leftCon (expandSyn (apSub s v)) of
-     Just ti | mfs /= Nothing ->
+     Just ti | (Just fs0) <- getIfcFields ti sy ->
+         let fs = {- trace ("fields:" ++ ppReadable fs0) $ -} map unQualId fs0
+             ty = foldr fn td ts
+         in
                 -- check for extra fields first
                 case fieldnames \\ fs of
                   i:_ -> err (getIdPosition i, EForeignModNotField
@@ -831,10 +851,6 @@ tiExpr as td exp@(CmoduleVerilog name ui clks rsts args fields sch ps) = do
                                 let e' = CmoduleVerilogT ty name' ui clks rsts
                                                          ses' fields' sch ps
                                 return (eq_ps ++ nps {- ++ concat pss -} ++ concat qss, e')
-        where mfs = getIfcFields ti sy
-              Just fs0 = mfs
-              fs = {- trace ("fields:" ++ ppReadable fs0) $ -} map unQualId fs0
-              ty = foldr fn td ts
      _ -> err (getPosition exp, ENotAnInterface)
 
 tiExpr as td exp@(CForeignFuncC link_id wrap_cqt) = do
@@ -1391,10 +1407,9 @@ taskCheckSWrite as td f es =
 -- and an invocation of the write method on the supplied interface.
 createAVExpr :: [Assump] -> Type -> CExpr -> [CExpr] -> TI CExpr
 createAVExpr _  _  f []        = err (getPosition f, (EMissingFileArgument (ppReadable f) "interface" "first"))
-createAVExpr as td f (dest:es) =
+createAVExpr as td f@(CVar task) (dest:es) =
       do
         let pos = (getPosition f)
-        let (CVar task) = f
         let id_av = toAVId(task)
         v <- newTVar "createAVExpr" KStar f
         _ <- tiExpr as v dest
@@ -1410,7 +1425,9 @@ createAVExpr as td f (dest:es) =
                      Just x  -> return x
         let (_ :>: (Forall _ qt)) = fi_assump info
         let (_ :=> tt) = inst args qt
-        let ((_:rest), _) = getArrows tt
+        let rest = case getArrows tt of
+                     ((_:r), _) -> r
+                     _ -> internalError "TCheck.createAVExpr: getArrows"
         t <- case (rest) of
                 [x] -> return x
                 _   -> err (pos, (EMissingFileArgument (ppReadable f) "interface (with an _write method)" "first" ))
@@ -1420,6 +1437,7 @@ createAVExpr as td f (dest:es) =
                                   (CTaskApply (CVar id_av) es)),
                                  (CSExpr Nothing (Cwrite pos dest (CVar id_new)))])
         return expr
+createAVExpr _ _ _ _ = internalError "TCheck.createAVExpr"
 
 createIdNew :: CExpr -> Position -> TI Id
 createIdNew dest pos =
@@ -1899,7 +1917,9 @@ tiStmts' chke mon mt as td (CSBindT (CPVar i) maybeName pprops (CQType [] ty) e 
         mapM_ kindCheckBV bvs
         -- check that there are no free vars in ty
         unless (null fvs) $
-            let TyVar v _ _ : _ = fvs
+            let v = case fvs of
+                      (TyVar v _ _ : _) -> v
+                      _ -> internalError "TCheck.tiStmts' CSBindT CPVar: fvs"
             in  err (getPosition v,  EUnboundTyVar (pfpString v))
         tiStmtBind chke mon mt as td i maybeName pprops e ss ty
 tiStmts' chke mon mt as td (CSBindT p name pprops qt e : ss) = do
@@ -2075,8 +2095,12 @@ tiField1 as rt (f, e) = do
     --posCheck "F" f
     i'               <- newVar (getIdPosition f) "tiField1"
     -- trace ("tiField1 " ++ ppReadable (f, i')) $ return ()
-    let fvs = map (\ (TVar v) -> v) (drop n xts)
-        TAp _ ft' = ft
+    let fvs = let getTyVar (TVar v) = v
+                  getTyVar _ = internalError "TCheck.tiField1: fvs"
+              in  map getTyVar (drop n xts)
+        ft' = case ft of
+                TAp _ t -> t
+                _ -> internalError "TCheck.tiField1: ft'"
         fsc = quantify fvs (apSub s (qs :=> ft'))
         -- if "e" is just a wrapper for a tiExpl anyway, call tiExpl on
         -- the wrapped def (see comments for tiExpr on Cinterface)
@@ -2580,7 +2604,9 @@ tiExpl''' as0 i sc alts me (oqt@(oqs :=> ot), vts) = do
         nsc = sc'
 
         -- The dictionary names of the predicates
-        vs = map (\ (EPred (CVar i) _) -> i) eqs
+        vs = let getId (EPred (CVar i) _) = i
+                 getId _ = internalError "TCheck.tiExpl''': vs getId"
+             in  map getId eqs
 
     -- The predicates which will be returned, to be handled by the
     -- enclosing binding.  It includes the deferred predicates "ds"
@@ -2935,7 +2961,10 @@ tiImpls recursive as ibs = do
               let mkFreshVar v = newTVar ("tiImpls fresh") (kind v) v
               vs_bound_here <- mapM mkFreshVar gs_used_here
               -- the same list, but as TyVar
-              let vts_bound_here = map (\ (TVar v) -> v) vs_bound_here
+              let vts_bound_here =
+                    let getTyVar (TVar v) = v
+                        getTyVar _ = internalError "TCheck.tiImpls: vts_bound_here getTyVar"
+                    in  map getTyVar vs_bound_here
               -- a mapping from the old names to the new names
               -- (need to apply this subst to everything -- types and exprs)
               -- (CSubst was extended to support TVar specifically for this)

@@ -22,8 +22,10 @@ import Data.Maybe
 import Data.Foldable(foldrM)
 import Numeric(showIntAtBase)
 import Data.Char(intToDigit, ord, chr)
+import Control.Monad(when, foldM, zipWithM, mapAndUnzipM)
+import Control.Monad.Fix(mfix)
 --import Control.Monad.Fix
-import Control.Monad.State
+import Control.Monad.State(State, evalState, liftIO, get, put)
 import Data.Graph
 import qualified Data.Generics as Generic
 import System.IO(Handle, BufferMode(..), IOMode(..), stdout, stderr,
@@ -1074,7 +1076,9 @@ iExpandMethodLam modId n args implicitCond clkRst (i, bi, eb) li ty p = do
         let inps :: [VPort]
             inps = vf_inputs wf1
         let wf1' :: VFieldInfo
-            wf1' = wf1 { vf_inputs = ((id_to_vPort i'):inps) }
+            wf1' = case wf1 of
+                     (Method {}) -> wf1 { vf_inputs = ((id_to_vPort i'):inps) }
+                     _ -> internalError "iExpandMethodLam: unexpected wf1"
         return ((i', ty) : its, (d, ws1, wf1'), (wd, ws2, wf2))
 
 iExpandMethod' :: HPred -> HClock -> (Id, BetterInfo.BetterInfo, HExpr) ->
@@ -3105,7 +3109,9 @@ conAp' c (ICOut { iConType = outty, conTagInfo = cti }) o as =
     case dropT as of
       E e : as' -> do
           let tys = takeT as
-              ITAp _ ty = itInst outty tys
+              ty = case itInst outty tys of
+                     (ITAp _ t) -> t
+                     _ -> internalError "IExpand.conAp' ICOut: ty"
               resType = dropArrows (length as') ty
 {-        -- XXX do we need to heap the args, to avoid duplication?
           let toHeapArg (E e) = toHeapInferName "out-arg" e >>= return . E
@@ -3118,7 +3124,9 @@ conAp' c (ICSel { iConType = selty, selNo = n }) sel as =
     case dropT as of
       E e : as' -> do
           let tys = takeT as
-              ITAp _ ty = itInst selty tys
+              ty = case itInst selty tys of
+                     (ITAp _ t) -> t
+                     _ -> internalError "IExpand.conAp' ICSel: ty"
               resType = dropArrows (length as') ty
 {-        -- XXX do we need to heap the args, to avoid duplication?
           let toHeapArg (E e) = toHeapInferName "sel-arg" e >>= return . E
@@ -4290,7 +4298,9 @@ improveIf :: HExpr -> IType -> HExpr -> HExpr -> HExpr -> G (HExpr, Bool)
 improveIf f t cnd (ICon i1 (ICLazyArray { iConType = ct1, iArray = arr1 }))
                   (ICon i2 (ICLazyArray { iConType = ct2, iArray = arr2 })) | Array.bounds arr1 == Array.bounds arr2 =
   do when doTraceIf $ traceM("improveIf array triggered" ++ show i1 ++ show i2)
-     let ITAp _ elemType = t -- type must be (PrimArray t)
+     let elemType = case t of
+                      ITAp _ te -> te -- type must be (PrimArray t)
+                      _ -> internalError "IExpand.improveIf arrsz1 == arrsz2: elemType"
          refs1 = Array.elems arr1
          refs2 = Array.elems arr2
      refs' <- zipWithM (\ref1 ref2 -> if (ac_ptr ref1) == (ac_ptr ref2) then
@@ -4388,6 +4398,42 @@ improveIf f t cnd thn@(IAps chr@(ICon _ (ICPrim _ PrimChr)) ts1 [chr_thn])
   let chrArgType = iGetType chr_thn
   (e', _) <- improveIf f chrArgType cnd chr_thn chr_els
   return (IAps chr ts1 [e'], True)
+
+-- Push if improvement inside constructors when one arm is undefined
+-- and the type has only one constructor
+--
+-- Further down, a general improveIf rule optimizes 'if c e _' to just 'e'.
+-- But that can cause poor code generation for if-else chains returning
+-- the constructors of a union type, so an earlier improveIf rule catches
+-- that situation (before the general rule can apply).
+-- However, if there is only one constructor, we do want an optimization to apply,
+-- so we put that here, prior to the blocking rule.
+--
+improveIf f t cnd thn@(IAps (ICon i1 c1@(ICCon {})) ts1 es1)
+                  els@(ICon i2 (ICUndet { iuKind = u }))
+  | numCon (conTagInfo c1) == 1
+  = do
+      when doTraceIf $ traceM ("improveIf ICCon/ICUndet triggered" ++ ppReadable (cnd,thn,els))
+      let realConType = itInst (iConType c1) ts1
+          (argTypes, _) = itGetArrows realConType
+      when (length argTypes /= length es1) $ internalError ("improveIf Con/Undet:" ++ ppReadable (argTypes, es1))
+      let mkUndet t = icUndetAt (getIdPosition i2) t u
+      (es', bs) <- mapAndUnzipM (\(t, e1) -> improveIf f t cnd e1 (mkUndet t)) (zip argTypes es1)
+      -- unambiguous improvement because the ICCon has propagated out
+      return ((IAps (ICon i1 c1) ts1 es'), True)
+improveIf f t cnd thn@(ICon i1 (ICUndet { iuKind = u }))
+                  els@(IAps (ICon i2 c2@(ICCon {})) ts2 es2)
+  | numCon (conTagInfo c2) == 1
+  = do
+      when doTraceIf $ traceM ("improveIf ICCon/ICUndet triggered" ++ ppReadable (cnd,thn,els))
+      let realConType = itInst (iConType c2) ts2
+          (argTypes, _) = itGetArrows realConType
+      when (length argTypes /= length es2) $ internalError ("improveIf Con/Undet:" ++ ppReadable (argTypes, es2))
+      let mkUndet t = icUndetAt (getIdPosition i1) t u
+      (es', bs) <- mapAndUnzipM (\(t, e2) -> improveIf f t cnd (mkUndet t) e2) (zip argTypes es2)
+      -- unambiguous improvement because the ICCon has propagated out
+      return ((IAps (ICon i2 c2) ts2 es'), True)
+
 -- Do not "optimize" constructors against undefined values because this can remove
 -- the conditions required to optimize chains of ifs like these:
 -- if (x == 0) 0 else if (x == 1) 1 else ... back to just x

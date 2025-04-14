@@ -10,7 +10,7 @@ import qualified Data.Set as S
 
 import IOUtil(progArgs)
 import Error (internalError, EMsg, ErrMsg(..), ErrorHandle, bsError,
-              convErrorTToIO)
+              convExceptTToIO)
 import Position (noPosition, getPosition)
 import PPrint
 import Flags
@@ -38,11 +38,10 @@ import SchedInfo (methodConflictInfo, sSB)
 import ABin (ABin(..), ABinModInfo(..))
 import ABinUtil(HierMap, getABIHierarchy, assertNoSchedErr)
 import SimDomainInfo
-import ListUtil (mapFst, mapSnd)
 
 import SCC (tsort)
 
-import Util (headOrErr, map_insertManyWith, allPairs, stableOrdNub)
+import Util (headOrErr, map_insertManyWith, allPairs, stableOrdNub, mapFst, mapSnd)
 import GraphUtil(extractOneCycle_map, reverseMap)
 
 -- ===============
@@ -66,11 +65,11 @@ simExpand errh flags topname fabis = do
     let prim_names = map sb_name primBlocks
 
     (topmodId, hiermap, instmap, ffuncmap, filemap, _, emodinfos_used_by_name)
-        <- convErrorTToIO errh $
+        <- convExceptTToIO errh $
            getABIHierarchy errh (verbose flags) (ifcPath flags) (Just Bluesim)
                            prim_names topname fabis
 
-    modinfos_used_by_name <- convErrorTToIO errh $
+    modinfos_used_by_name <- convExceptTToIO errh $
                              assertNoSchedErr emodinfos_used_by_name
 
     -- reject top-level modules with always_enabled ifc, if generating
@@ -1289,7 +1288,10 @@ combineDomainInfoMap inst avinst
                         ds ->
                             -- substitute each (child,parent) clock pair
                             -- to create the new domain info
-                            let (_, Just (parent_dom_id,_)) = head ds
+                            let parent_dom_id =
+                                  case ds of
+                                     ((_, Just (i,_)):_) -> i
+                                     _ -> internalError "combineDomainInfoMap substDomain"
                                 ps = [ (c,p) | (c, Just(_,p)) <- ds ]
                                 sub dom_info (child_clk,parent_clk) =
                                     substInputClockInDomainInfo child_clk
