@@ -1524,6 +1524,119 @@ module vSyncFIFO1 (
 
 endmodule
 
+// Version for depth 1
+import "BVI" SyncFIFO1 =
+module vSyncFIFO1_Ungdeq (
+                    Clock sClkIn, Reset sRstIn,
+                    Clock dClkIn, Reset dRstIn,
+                    SyncFIFOIfc #(a) ifc)
+
+   provisos (Bits#(a,sa));
+
+   parameter dataWidth = valueOf( sa ) ;
+   default_clock no_clock ;
+   no_reset ;
+
+   input_clock clk_src ( sCLK, (*unused*)sCLK_GATE ) = sClkIn;
+   input_clock clk_dst ( dCLK, (*unused*)dCLK_GATE ) = dClkIn;
+
+   input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
+
+   method enq ( sD_IN )  ready(sFULL_N)  enable(sENQ) clocked_by(clk_src) reset_by(sRstIn);
+   method deq ()         enable(dDEQ) clocked_by(clk_dst) reset_by(dRstIn);
+   method dD_OUT first()              clocked_by(clk_dst) reset_by(dRstIn);
+   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(dRstIn);
+   method sFULL_N notFull()                           clocked_by(clk_src) reset_by(sRstIn);
+
+      schedule first SB deq;
+      schedule first CF (notFull, notEmpty, enq, first);
+      schedule notFull CF (notEmpty, notFull, deq);
+      schedule notFull SB enq;
+      schedule notEmpty SB deq;
+      schedule notEmpty CF (notEmpty, enq);
+      schedule enq CF deq;
+      schedule deq C deq;
+      schedule enq C enq;
+
+endmodule
+
+// Version for depth 1
+import "BVI" SyncFIFO1 =
+module vSyncFIFO1_Ungenq (
+                    Clock sClkIn, Reset sRstIn,
+                    Clock dClkIn, Reset dRstIn,
+                    SyncFIFOIfc #(a) ifc)
+
+   provisos (Bits#(a,sa));
+
+   parameter dataWidth = valueOf( sa ) ;
+   default_clock no_clock ;
+   no_reset ;
+
+   input_clock clk_src ( sCLK, (*unused*)sCLK_GATE ) = sClkIn;
+   input_clock clk_dst ( dCLK, (*unused*)dCLK_GATE ) = dClkIn;
+
+   input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
+
+   method enq ( sD_IN )  enable(sENQ) clocked_by(clk_src) reset_by(sRstIn);
+   method deq ()         ready(dEMPTY_N) enable(dDEQ) clocked_by(clk_dst) reset_by(dRstIn);
+   method dD_OUT first() ready(dEMPTY_N)              clocked_by(clk_dst) reset_by(dRstIn);
+   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(dRstIn);
+   method sFULL_N notFull()                           clocked_by(clk_src) reset_by(sRstIn);
+
+      schedule first SB deq;
+      schedule first CF (notFull, notEmpty, enq, first);
+      schedule notFull CF (notEmpty, notFull, deq);
+      schedule notFull SB enq;
+      schedule notEmpty SB deq;
+      schedule notEmpty CF (notEmpty, enq);
+      schedule enq CF deq;
+      schedule deq C deq;
+      schedule enq C enq;
+
+endmodule
+
+// Version for depth 1
+import "BVI" SyncFIFO1 =
+module vSyncFIFO1_Ung (
+                    Clock sClkIn, Reset sRstIn,
+                    Clock dClkIn, Reset dRstIn,
+                    SyncFIFOIfc #(a) ifc)
+
+   provisos (Bits#(a,sa));
+
+   parameter dataWidth = valueOf( sa ) ;
+   default_clock no_clock ;
+   no_reset ;
+
+   input_clock clk_src ( sCLK, (*unused*)sCLK_GATE ) = sClkIn;
+   input_clock clk_dst ( dCLK, (*unused*)dCLK_GATE ) = dClkIn;
+
+   input_reset (sRST) clocked_by (clk_src) = sRstIn ;
+   input_reset (dRST) clocked_by (clk_dst) = dRstIn ;
+
+   method enq ( sD_IN )   enable(sENQ) clocked_by(clk_src) reset_by(sRstIn);
+   method deq ()          enable(dDEQ) clocked_by(clk_dst) reset_by(dRstIn);
+   method dD_OUT first()               clocked_by(clk_dst) reset_by(dRstIn);
+   method dEMPTY_N notEmpty()                         clocked_by(clk_dst) reset_by(dRstIn);
+   method sFULL_N notFull()                           clocked_by(clk_src) reset_by(sRstIn);
+
+      schedule first SB deq;
+      schedule first CF (notFull, notEmpty, enq, first);
+      schedule notFull CF (notEmpty, notFull, deq);
+      schedule notFull SB enq;
+      schedule notEmpty SB deq;
+      schedule notEmpty CF (notEmpty, enq);
+      schedule enq CF deq;
+      schedule deq C deq;
+      schedule enq C enq;
+
+endmodule
+
+
+
 // Version for data width 0
 import "BVI" SyncFIFO0 =
 module vSyncFIFO0 #(Integer depthIn
@@ -1639,6 +1752,7 @@ module mkSyncFIFO #( Integer depthIn
    return _ifc ;
 endmodule
 
+//TODO: Complete the same GFIFO for Data Width 0
 module mkSyncGFIFO #(Bool ugenq, Bool ugdeq, Integer depthIn)(
                        Clock sClkIn, Reset sRstIn,
                        Clock dClkIn, Reset dRstIn,
@@ -1662,7 +1776,14 @@ module mkSyncGFIFO #(Bool ugenq, Bool ugdeq, Integer depthIn)(
    else begin
      let ifc_lv;
      if (depthIn == 1) begin
-       ifc_lv = vSyncFIFO1(sClkIn, sRstIn, dClkIn, dRstIn);
+       if (ugenq == True && ugdeq == True)
+         ifc_lv = vSyncFIFO1_Ung(sClkIn, sRstIn, dClkIn, dRstIn);
+       else if (ugenq == True && ugdeq == False)
+         ifc_lv = vSyncFIFO1_Ungenq(sClkIn, sRstIn, dClkIn, dRstIn);
+       else if (ugenq == False && ugdeq == True)
+         ifc_lv = vSyncFIFO1_Ungdeq(sClkIn, sRstIn, dClkIn, dRstIn);
+       else
+         ifc_lv = vSyncFIFO1(sClkIn, sRstIn, dClkIn, dRstIn);
      end
      else begin
        if (ugenq == True && ugdeq == True)
