@@ -1384,8 +1384,8 @@ module vSyncFIFO_Ungenq #(Integer depthIn
       schedule notEmpty SB deq;
       schedule notEmpty CF (notEmpty, enq);
       schedule enq CF deq;
-      schedule deq CF deq;
-      schedule enq CF enq;
+      schedule deq C deq;
+      schedule enq C enq;
 
 endmodule
 
@@ -1432,8 +1432,8 @@ module vSyncFIFO_Ungdeq #(Integer depthIn
       schedule notEmpty SB deq;
       schedule notEmpty CF (notEmpty, enq);
       schedule enq CF deq;
-      schedule deq CF deq;
-      schedule enq CF enq;
+      schedule deq C deq;
+      schedule enq C enq;
 
 endmodule
 
@@ -1480,8 +1480,8 @@ module vSyncFIFO_Ung #(Integer depthIn
       schedule notEmpty SB deq;
       schedule notEmpty CF (notEmpty, enq);
       schedule enq CF deq;
-      schedule deq CF deq;
-      schedule enq CF enq;
+      schedule deq C deq;
+      schedule enq C enq;
 
 endmodule
 
